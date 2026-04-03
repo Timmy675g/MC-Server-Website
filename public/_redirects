@@ -1,0 +1,5 @@
+/api/status /.netlify/functions/status 200
+/api/factions /.netlify/functions/factions 200
+/api/players /.netlify/functions/players 200
+/api/uptime /.netlify/functions/uptime 200
+/* /index.html 200
