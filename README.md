@@ -66,6 +66,22 @@ export default defineConfig([
   - `VITE_FORMSUBMIT_ENDPOINT`
   - `VITE_API_BASE`
 
+  ## GitHub Pages Deployment
+
+  If hosting from GitHub Pages, do not serve repository root source files directly.
+  This project is Vite-based and must be built first so `dist/` is deployed.
+
+  Workflow: `.github/workflows/deploy-pages.yml`
+
+  What it does:
+  - Installs dependencies with `npm ci`
+  - Builds production output into `dist/`
+  - Copies `dist/index.html` to `dist/404.html` for SPA fallback routing
+  - Deploys `dist/` to GitHub Pages
+
+  Custom domain:
+  - `public/CNAME` is set to `www.survivalkendy.systems`
+
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
 ```js
