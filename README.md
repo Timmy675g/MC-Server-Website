@@ -43,6 +43,29 @@ export default defineConfig([
 ])
 ```
 
+  ## GitHub Actions CI/CD
+
+  Workflow: `.github/workflows/ci-cd.yml`
+
+  Pipeline includes:
+  - Secret leak scanning with Gitleaks
+  - Lint and production build checks
+  - Required GitHub Secrets validation (legacy env + app env)
+
+  Required GitHub Secrets:
+  - `BEDROCK_PORT`
+  - `MC_SERVER_HOSTS`
+  - `MC_SERVER_PORT`
+  - `RCON_PORT`
+  - `UPTIME_KUMA_MONITOR_MINECRAFT`
+  - `UPTIME_KUMA_MONITOR_VM`
+  - `UPTIME_KUMA_STATUS_PAGE_URL`
+
+  Optional GitHub Secrets:
+  - `VITE_FORMSUBMIT_EMAIL`
+  - `VITE_FORMSUBMIT_ENDPOINT`
+  - `VITE_API_BASE`
+
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
 ```js

@@ -8,6 +8,21 @@
     min-height: 100%;
   }
 
+  :root {
+    --font-body: 'Formula1 Display', 'Formula1', 'IBM Plex Sans', sans-serif;
+    --font-display: 'Formula1 Display', 'Formula1', 'IBM Plex Sans', sans-serif;
+  }
+
+  .navbar,
+  .navbar .logo,
+  .navbar .nav-links a,
+  .navbar .nav-dropdown-btn,
+  .navbar .theme-toggle-btn,
+  .navbar .mobile-menu-btn,
+  .navbar .nav-stats-btn {
+    font-family: 'Formula1 Display', 'Formula1', 'IBM Plex Sans', sans-serif !important;
+  }
+
   body {
     margin: 0;
   }

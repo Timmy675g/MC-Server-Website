@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FACTION_ITEMS } from '../lib/content';
+import { Badge } from '../components/ui/badge';
+import { Card } from '../components/ui/card';
 
 type StatusPayload = {
   playersOnline?: number;
@@ -115,13 +117,13 @@ export default function StatsPage() {
 
   return (
     <main className="container section stack reveal in-view">
-      <article className="card" style={{ gridColumn: '1 / -1' }}>
+      <Card className="card" style={{ gridColumn: '1 / -1' }}>
         <h1>Stats Dashboard</h1>
         <p className="subtitle">Live player trend, uptime health, and faction power ranking.</p>
         {error ? <p>{error}</p> : null}
-      </article>
+      </Card>
 
-      <article className="card" style={{ gridColumn: '1 / -1' }}>
+      <Card className="card" style={{ gridColumn: '1 / -1' }}>
         <h3>Player Count (recent samples)</h3>
         <div style={{ marginTop: '0.9rem', display: 'flex', height: '13rem', alignItems: 'end', gap: '0.5rem', overflowX: 'auto', border: '1px solid var(--line)', borderRadius: '10px', padding: '0.65rem' }}>
           {history.length === 0 ? (
@@ -143,11 +145,12 @@ export default function StatsPage() {
             })
           )}
         </div>
-      </article>
+      </Card>
 
       <section className="card-grid two-col" style={{ gridColumn: '1 / -1' }}>
-        <article className="card">
+        <Card className="card">
           <h3>Uptime Statistics</h3>
+          <p style={{ marginTop: '0.35rem' }}><Badge variant="outline">24H RANGE</Badge></p>
           <p className="stat-value">{uptimeText(uptime?.stats?.uptimePercent)}</p>
           <p className="meta" style={{ marginTop: '0.5rem' }}>
             No incident streak: {formatMinutesToHuman(uptime?.stats?.incidentFreeStreakMinutes)}
@@ -155,9 +158,9 @@ export default function StatsPage() {
           <p className="meta" style={{ marginTop: '0.2rem' }}>
             Incident time in range: {formatMinutesToHuman(uptime?.stats?.incidentMinutes)}
           </p>
-        </article>
+        </Card>
 
-        <article className="card">
+        <Card className="card">
           <h3>Server Runtime Metrics</h3>
           <div className="stack" style={{ marginTop: '0.45rem' }}>
             <p>Players: <b>{status?.playersOnline ?? 0} / {status?.playersMax ?? 0}</b></p>
@@ -165,22 +168,22 @@ export default function StatsPage() {
             <p>CPU Usage: <b>{status?.cpuUsage ?? '--'}%</b></p>
             <p>RAM Usage: <b>{status?.ramUsage ?? '--'}%</b></p>
           </div>
-        </article>
+        </Card>
       </section>
 
-      <article className="card" style={{ gridColumn: '1 / -1' }}>
+      <Card className="card" style={{ gridColumn: '1 / -1' }}>
         <h3>Faction Power Rankings</h3>
         <div className="stack" style={{ marginTop: '0.7rem' }}>
           {ranking.map((faction, index) => (
-            <article key={faction.name} className="card" style={{ gridColumn: '1 / -1' }}>
+            <Card key={faction.name} className="card" style={{ gridColumn: '1 / -1' }}>
               <p><strong>#{index + 1} {faction.name}</strong></p>
               <p>Power score: <b>{faction.power}</b></p>
               <p className="meta">Leader: {faction.leader} | Members: {faction.members}</p>
               <p className="meta">Allegiances: {faction.allegiances}</p>
-            </article>
+            </Card>
           ))}
         </div>
-      </article>
+      </Card>
     </main>
   );
 }

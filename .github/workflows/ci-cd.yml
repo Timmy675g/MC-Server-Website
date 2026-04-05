@@ -1,0 +1,105 @@
+name: CI-CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret_scan:
+    name: Secret Leak Scan (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  quality:
+    name: Lint + Build
+    runs-on: ubuntu-latest
+    needs: secret_scan
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        env:
+          VITE_FORMSUBMIT_EMAIL: ${{ secrets.VITE_FORMSUBMIT_EMAIL }}
+          VITE_FORMSUBMIT_ENDPOINT: ${{ secrets.VITE_FORMSUBMIT_ENDPOINT }}
+          VITE_API_BASE: ${{ secrets.VITE_API_BASE }}
+        run: npm run build
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: dist
+          if-no-files-found: error
+
+  verify_github_secrets:
+    name: Verify Required GitHub Secrets
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    needs: quality
+    env:
+      BEDROCK_PORT: ${{ secrets.BEDROCK_PORT }}
+      MC_SERVER_HOSTS: ${{ secrets.MC_SERVER_HOSTS }}
+      MC_SERVER_PORT: ${{ secrets.MC_SERVER_PORT }}
+      RCON_PORT: ${{ secrets.RCON_PORT }}
+      UPTIME_KUMA_MONITOR_MINECRAFT: ${{ secrets.UPTIME_KUMA_MONITOR_MINECRAFT }}
+      UPTIME_KUMA_MONITOR_VM: ${{ secrets.UPTIME_KUMA_MONITOR_VM }}
+      UPTIME_KUMA_STATUS_PAGE_URL: ${{ secrets.UPTIME_KUMA_STATUS_PAGE_URL }}
+      VITE_FORMSUBMIT_EMAIL: ${{ secrets.VITE_FORMSUBMIT_EMAIL }}
+      VITE_FORMSUBMIT_ENDPOINT: ${{ secrets.VITE_FORMSUBMIT_ENDPOINT }}
+    steps:
+      - name: Check secrets are present
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          missing=()
+          [[ -z "${BEDROCK_PORT}" ]] && missing+=("BEDROCK_PORT")
+          [[ -z "${MC_SERVER_HOSTS}" ]] && missing+=("MC_SERVER_HOSTS")
+          [[ -z "${MC_SERVER_PORT}" ]] && missing+=("MC_SERVER_PORT")
+          [[ -z "${RCON_PORT}" ]] && missing+=("RCON_PORT")
+          [[ -z "${UPTIME_KUMA_MONITOR_MINECRAFT}" ]] && missing+=("UPTIME_KUMA_MONITOR_MINECRAFT")
+          [[ -z "${UPTIME_KUMA_MONITOR_VM}" ]] && missing+=("UPTIME_KUMA_MONITOR_VM")
+          [[ -z "${UPTIME_KUMA_STATUS_PAGE_URL}" ]] && missing+=("UPTIME_KUMA_STATUS_PAGE_URL")
+
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "Missing required GitHub Secrets: ${missing[*]}"
+            exit 1
+          fi
+
+          if [[ -z "${VITE_FORMSUBMIT_EMAIL}" && -z "${VITE_FORMSUBMIT_ENDPOINT}" ]]; then
+            echo "Warning: VITE_FORMSUBMIT_EMAIL or VITE_FORMSUBMIT_ENDPOINT is not set. Apply form will use fallback endpoint."
+          fi
+
+          echo "Required deployment secrets are available."

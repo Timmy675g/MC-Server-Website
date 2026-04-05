@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
 
 const APPLY_SUBMIT_FLAG = 'sk_apply_submitted';
 const APPLY_LAST_SUBMIT_KEY = 'sk_apply_last_submit_ms';
@@ -168,27 +171,27 @@ export default function ApplyPage() {
 
         <label>
           Minecraft Username (add "." in front if Bedrock, normal username if Java)
-          <input className="field" type="text" name="mc_username" placeholder=".BedrockName or JavaName" required />
+          <Input className="field" type="text" name="mc_username" placeholder=".BedrockName or JavaName" required />
         </label>
         <label>
           Grade
-          <input className="field" type="text" name="grade" required />
+          <Input className="field" type="text" name="grade" required />
         </label>
         <label>
           School
-          <input className="field" type="text" name="school" required />
+          <Input className="field" type="text" name="school" required />
         </label>
         <label>
           Discord Username (for contact if approved)
-          <input className="field" type="text" name="discord_username" placeholder="username or username#1234" required />
+          <Input className="field" type="text" name="discord_username" placeholder="username or username#1234" required />
         </label>
         <label>
           Invited By
-          <input className="field" type="text" name="invited_by" placeholder="Friend username / who invited you" required />
+          <Input className="field" type="text" name="invited_by" placeholder="Friend username / who invited you" required />
         </label>
         <label>
           Reasons why you want to join
-          <textarea rows={4} name="motivation" required />
+          <Textarea className="field" rows={4} name="motivation" required />
         </label>
 
         <label className="apply-agreement-row">
@@ -197,9 +200,9 @@ export default function ApplyPage() {
         </label>
 
         {error ? <p id="apply-form-error" className="apply-form-error" role="alert">{error}</p> : null}
-        <button className="btn btn-primary" type="submit" style={{ border: 'none', cursor: 'pointer' }} disabled={submitting}>
+        <Button className="btn btn-primary" type="submit" style={{ border: 'none', cursor: 'pointer' }} disabled={submitting}>
           {submitting ? 'Submitting...' : 'Apply'}
-        </button>
+        </Button>
       </form>
 
       <div id="apply-success-popup" className={`apply-popup-backdrop ${showSuccess ? 'is-open' : ''}`} hidden={!showSuccess} onClick={(event) => {
@@ -208,9 +211,9 @@ export default function ApplyPage() {
           <article className="apply-popup" role="dialog" aria-modal="true" aria-labelledby="apply-success-title" aria-describedby="apply-success-message">
             <h2 id="apply-success-title">Thank you for Applying!</h2>
             <p id="apply-success-message">A Team of Verificator will Verify and Check the Form you gave us, please wait up to 1 - 2 Hours, if you haven't been contacted by our team in 24 Hours, feel free to contact the owner via the owner Social Media link in the Footer below! Or ask a friend that you know about this server!</p>
-            <button id="apply-success-close" className="btn btn-primary" type="button" style={{ border: 'none', cursor: 'pointer' }} onClick={() => setShowSuccess(false)}>
+            <Button id="apply-success-close" className="btn btn-primary" type="button" style={{ border: 'none', cursor: 'pointer' }} onClick={() => setShowSuccess(false)}>
               Close
-            </button>
+            </Button>
           </article>
       </div>
     </main>
