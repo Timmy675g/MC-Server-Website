@@ -1,5 +1,6 @@
 import type { ApiEnvelope, ServerStatus, UptimeStats } from '../types/api';
 import { apiUrl } from './api-base';
+import { unwrapPayload } from './api-envelope';
 
 const cache = new Map<string, Promise<unknown>>();
 
@@ -43,7 +44,7 @@ function withCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
 export function getStatus(): Promise<ServerStatus> {
   return withCache('status', async () => {
     const data = await fetchJson<ApiEnvelope<ServerStatus> | ServerStatus>(apiUrl('/status'));
-    const payload = ((data as ApiEnvelope<ServerStatus>).payload ?? data) as ServerStatus;
+    const payload = unwrapPayload<ServerStatus>(data);
 
     return {
       status: payload.status ?? 'offline',
@@ -60,15 +61,16 @@ export function getStatus(): Promise<ServerStatus> {
 
 export function getUptime(): Promise<UptimeStats> {
   return withCache('uptime', async () => {
-    const data = await fetchJson<UptimeApiResponse>(apiUrl('/uptime?range=1d'));
-    const uptimePercent = data.stats?.uptimePercent;
+    const data = await fetchJson<ApiEnvelope<UptimeApiResponse> | UptimeApiResponse>(apiUrl('/uptime?range=1d'));
+    const payload = unwrapPayload<UptimeApiResponse>(data);
+    const uptimePercent = payload.stats?.uptimePercent;
 
     return {
       uptimePercent: Number.isFinite(Number(uptimePercent))
         ? Number(uptimePercent)
         : null,
-      currentStatus: String(data?.current?.status ?? 'unknown'),
-      currentLabel: String(data?.current?.label ?? 'Unknown'),
+      currentStatus: String(payload?.current?.status ?? 'unknown'),
+      currentLabel: String(payload?.current?.label ?? 'Unknown'),
     };
   });
 }

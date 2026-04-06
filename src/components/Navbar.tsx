@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { applyTheme, getInitialTheme } from '../lib/theme';
 import { apiUrl } from '../lib/api-base';
+import { unwrapPayload } from '../lib/api-envelope';
 import type { ServerStatus } from '../types/api';
 
 const infoItems = [
@@ -58,8 +59,13 @@ export function Navbar() {
 
   useEffect(() => {
     let mounted = true;
+    let inFlight = false;
 
     const pullStatus = async () => {
+      if (inFlight) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+
+      inFlight = true;
       try {
         const response = await fetch(apiUrl('/status'), {
           method: 'GET',
@@ -68,7 +74,8 @@ export function Navbar() {
         });
 
         if (!response.ok) return;
-        const data = await response.json();
+        const raw = await response.json();
+        const data = unwrapPayload<ServerStatus>(raw);
         if (!mounted) return;
 
         setLiveStatus({
@@ -83,13 +90,15 @@ export function Navbar() {
         });
       } catch {
         // Ignore transient pull failures in navbar stats.
+      } finally {
+        inFlight = false;
       }
     };
 
     void pullStatus();
     const id = window.setInterval(() => {
       void pullStatus();
-    }, 15000);
+    }, 60000);
 
     return () => {
       mounted = false;

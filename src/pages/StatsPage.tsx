@@ -3,6 +3,8 @@ import { FACTION_ITEMS } from '../lib/content';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
 import { apiUrl } from '../lib/api-base';
+import { unwrapPayload } from '../lib/api-envelope';
+import type { ApiEnvelope } from '../types/api';
 
 type StatusPayload = {
   playersOnline?: number;
@@ -85,14 +87,15 @@ export default function StatsPage() {
         if (!statusResponse.ok) throw new Error('status failed');
         if (!uptimeResponse.ok) throw new Error('uptime failed');
 
-        const statusData = await statusResponse.json() as { payload?: StatusPayload } & StatusPayload;
-        const uptimeData = await uptimeResponse.json() as UptimePayload;
+        const statusData = await statusResponse.json() as ApiEnvelope<StatusPayload> | StatusPayload;
+        const uptimeData = await uptimeResponse.json() as ApiEnvelope<UptimePayload> | UptimePayload;
 
         if (!mounted) return;
 
-        const statusPayload = statusData.payload ?? statusData;
+        const statusPayload = unwrapPayload<StatusPayload>(statusData);
+        const uptimePayload = unwrapPayload<UptimePayload>(uptimeData);
         setStatus(statusPayload);
-        setUptime(uptimeData);
+        setUptime(uptimePayload);
         setHistory(pushHistory(Number(statusPayload.playersOnline ?? 0)));
       })
       .catch(() => {

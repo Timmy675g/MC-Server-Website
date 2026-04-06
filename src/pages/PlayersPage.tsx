@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiUrl } from '../lib/api-base';
+import { unwrapPayload } from '../lib/api-envelope';
 
 type Player = {
   username?: string;
@@ -50,6 +51,7 @@ function avatarChain(player: Player): string[] {
 
 export default function PlayersPage() {
   const [payload, setPayload] = useState<PlayersResponse | null>(null);
+  const [servers, setServers] = useState<Player[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -62,11 +64,13 @@ export default function PlayersPage() {
     })
       .then((response) => {
         if (!response.ok) throw new Error(`Players request failed: ${response.status}`);
-        return response.json() as Promise<PlayersResponse>;
+        return response.json() as Promise<{ payload?: PlayersResponse } | PlayersResponse>;
       })
-      .then((data) => {
+      .then((raw) => {
         if (!mounted) return;
+        const data = unwrapPayload<PlayersResponse>(raw);
         setPayload(data);
+        setServers(Array.isArray(data?.players) ? data.players : []);
       })
       .catch(() => {
         if (!mounted) return;
@@ -78,7 +82,7 @@ export default function PlayersPage() {
     };
   }, []);
 
-  const players = Array.isArray(payload?.players) ? payload.players : [];
+  const players = servers;
 
   return (
     <section className="container reveal in-view section">

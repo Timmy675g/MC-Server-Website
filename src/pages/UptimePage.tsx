@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiUrl } from '../lib/api-base';
+import { unwrapPayload } from '../lib/api-envelope';
+import type { ApiEnvelope } from '../types/api';
 
 type UptimeComponent = {
   status?: string;
@@ -81,11 +83,11 @@ export default function UptimePage() {
     })
       .then((response) => {
         if (!response.ok) throw new Error(`Uptime request failed: ${response.status}`);
-        return response.json() as Promise<UptimePayload>;
+        return response.json() as Promise<ApiEnvelope<UptimePayload> | UptimePayload>;
       })
-      .then((data) => {
+      .then((raw) => {
         if (!mounted) return;
-        setPayload(data);
+        setPayload(unwrapPayload<UptimePayload>(raw));
         setError(null);
       })
       .catch(() => {
