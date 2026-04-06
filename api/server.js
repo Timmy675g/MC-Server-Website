@@ -3,6 +3,11 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+let lastStatusData = null;
+let lastStatusTime = 0;
+let lastUptimeData = null;
+let lastUptimeTime = 0;
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -31,11 +36,10 @@ const UPTIME_KUMA_STATUS_PAGE_URL = String(process.env.UPTIME_KUMA_STATUS_PAGE_U
 const UPTIME_KUMA_MONITOR_MINECRAFT = String(process.env.UPTIME_KUMA_MONITOR_MINECRAFT || '').trim();
 const UPTIME_KUMA_MONITOR_VM = String(process.env.UPTIME_KUMA_MONITOR_VM || '').trim();
 
-const hosts = String(process.env.MC_SERVER_HOSTS || '')
+const hosts = String(process.env.MC_SERVER_HOSTS || '35.219.114.141')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
-const primaryHost = hosts[0] || 'localhost';
 
 const STATUS_CACHE_TTL_MS = 15_000;
 const UPTIME_CACHE_TTL_MS = 20_000;
@@ -78,7 +82,7 @@ function normalizeJavaStatus(javaData, bedrockData) {
     javaPing: Number.isFinite(Number(javaData?.latency)) ? Number(javaData.latency) : null,
     bedrockPing: Number.isFinite(Number(bedrockData?.latency)) ? Number(bedrockData.latency) : null,
     version: javaData?.version?.name_clean || javaData?.version?.name_raw || javaData?.version?.name || undefined,
-    software: javaData?.motd?.clean?.join(' ') || undefined,
+    software: Array.isArray(javaData?.motd?.clean) ? javaData.motd.clean.join(' ') : (javaData?.motd?.clean || undefined),
   };
 }
 
@@ -161,8 +165,8 @@ function summarizeUptime(timeline) {
 async function getLiveStatus() {
   if (cachedStatus && nowMs() - cachedStatusAt < STATUS_CACHE_TTL_MS) return cachedStatus;
 
-  const javaUrl = `https://api.mcstatus.io/v2/status/java/${encodeURIComponent(primaryHost)}:${MC_SERVER_PORT}`;
-  const bedrockUrl = `https://api.mcstatus.io/v2/status/bedrock/${encodeURIComponent(primaryHost)}:${BEDROCK_PORT}`;
+  const javaUrl = `https://api.mcstatus.io/v2/status/java/${encodeURIComponent(hosts[0])}:${MC_SERVER_PORT}`;
+  const bedrockUrl = `https://api.mcstatus.io/v2/status/bedrock/${encodeURIComponent(hosts[0])}:${BEDROCK_PORT}`;
 
   const [javaRes, bedrockRes] = await Promise.allSettled([
     fetchJson(javaUrl),
@@ -284,19 +288,32 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'survivalkendy-api', time: new Date().toISOString() });
 });
 
+let lastRequestTime = 0;
+
 app.get('/status', async (_req, res) => {
+  const now = Date.now();
+  
+  // If we fetched data less than 10 seconds ago, just send the old one
+  if (lastStatusData && (now - lastStatusTime < 10000)) {
+    return res.json({ payload: lastStatusData });
+  }
+
   try {
     const status = await getLiveStatus();
-    res.json(status);
+    lastStatusData = status;
+    lastStatusTime = now;
+    res.json({ payload: status });
   } catch (error) {
     res.status(502).json({
-      status: 'offline',
-      playersOnline: 0,
-      playersMax: 0,
-      uptime: 0,
-      javaPing: null,
-      bedrockPing: null,
-      error: String(error?.message || error),
+      payload: {
+        status: 'offline',
+        playersOnline: 0,
+        playersMax: 0,
+        uptime: 0,
+        javaPing: null,
+        bedrockPing: null,
+        error: String(error?.message || error)
+      }
     });
   }
 });
@@ -324,33 +341,19 @@ app.get('/players', async (_req, res) => {
 });
 
 app.get('/uptime', async (req, res) => {
-  try {
-    const range = String(req.query?.range || '30d');
-    const data = await getLiveUptime(range);
-    res.json(data);
-  } catch (error) {
-    res.status(502).json({
-      timezone: 'Asia/Jakarta',
-      generatedAt: new Date().toISOString(),
-      range: { key: String(req.query?.range || '30d') },
-      components: {
-        minecraftServer: { status: 'unknown', label: 'Unknown' },
-        virtualMachine: { status: 'unknown', label: 'Unknown' },
-      },
-      componentTimelines: { minecraftServer: [], virtualMachine: [], ipPulling: [] },
-      stats: { uptimePercent: null, incidentMinutes: null, incidentFreeStreakMinutes: null },
-      current: { status: 'unknown', label: 'Unknown' },
-      error: String(error?.message || error),
-    });
+  const now = Date.now();
+  if (lastUptimeData && (now - lastUptimeTime < 15000)) {
+    return res.json({ payload: lastUptimeData });
   }
-});
 
-// 1. Serve the static files (css, js, images)
-app.use(express.static(path.join(__dirname, 'dist')));
-
-// 2. The "Catch-All" route to serve index.html for the home page
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  try {
+    const data = await getLiveUptime(req.query?.range || '30d');
+    lastUptimeData = data;
+    lastUptimeTime = now;
+    res.json({ payload: data });
+  } catch (error) {
+    res.status(502).json({ payload: { status: 'error' } });
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
