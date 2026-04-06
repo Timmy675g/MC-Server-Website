@@ -1,5 +1,10 @@
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
@@ -338,6 +343,14 @@ app.get('/uptime', async (req, res) => {
       error: String(error?.message || error),
     });
   }
+});
+
+// 1. Serve the static files (css, js, images)
+app.use(express.static(path.join(__dirname, 'dist')));
+
+// 2. The "Catch-All" route to serve index.html for the home page
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
