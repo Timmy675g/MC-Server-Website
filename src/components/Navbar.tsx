@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { applyTheme, getInitialTheme } from '../lib/theme';
+import { apiUrl } from '../lib/api-base';
 import type { ServerStatus } from '../types/api';
 
 const infoItems = [
@@ -33,12 +34,6 @@ export function Navbar() {
   const isStatusActive = statusItems.some((item) => location.pathname === item.to);
 
   useEffect(() => {
-    setOpen(false);
-    setOpenDropdown(null);
-    setStatsOpen(false);
-  }, [location.pathname]);
-
-  useEffect(() => {
     document.body.classList.toggle('nav-open-mobile', open);
     return () => document.body.classList.remove('nav-open-mobile');
   }, [open]);
@@ -46,12 +41,6 @@ export function Navbar() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
-
-  useEffect(() => {
-    if (statsBlocked) {
-      setStatsOpen(false);
-    }
-  }, [statsBlocked]);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -72,7 +61,7 @@ export function Navbar() {
 
     const pullStatus = async () => {
       try {
-        const response = await fetch('/api/status', {
+        const response = await fetch(apiUrl('/status'), {
           method: 'GET',
           headers: { Accept: 'application/json' },
           cache: 'no-store',
@@ -92,7 +81,7 @@ export function Navbar() {
           version: data?.version,
           software: data?.software,
         });
-      } catch (_) {
+      } catch {
         // Ignore transient pull failures in navbar stats.
       }
     };
@@ -217,12 +206,12 @@ export function Navbar() {
         <NavLink to="/apply" className={({ isActive }) => (isActive ? 'active nav-join-apply-link' : 'nav-join-apply-link')}>Apply</NavLink>
       </div>
 
-      <div className={`nav-stats ${statsOpen ? 'open' : ''} ${statsBlocked ? 'is-disabled' : ''}`}>
+      <div className={`nav-stats ${statsOpen && !statsBlocked ? 'open' : ''} ${statsBlocked ? 'is-disabled' : ''}`}>
         <button
           type="button"
           className="nav-stats-btn"
           aria-label="Toggle live stats"
-          aria-expanded={statsOpen}
+          aria-expanded={statsOpen && !statsBlocked}
           disabled={statsBlocked}
           onClick={() => setStatsOpen((value) => !value)}
         >

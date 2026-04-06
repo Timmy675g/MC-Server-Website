@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiUrl } from '../lib/api-base';
 
 type Player = {
   username?: string;
@@ -54,7 +55,7 @@ export default function PlayersPage() {
   useEffect(() => {
     let mounted = true;
 
-    fetch('/api/players', {
+    fetch(apiUrl('/players'), {
       method: 'GET',
       headers: { Accept: 'application/json' },
       cache: 'no-store',

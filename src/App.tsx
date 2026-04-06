@@ -21,6 +21,19 @@ const EventsPage = lazy(() => import('./pages/EventsPage'));
 
 const MIN_BOOT_MS = 900;
 const ROUTE_FALLBACK_PROGRESS = 96;
+type BootChecks = {
+  api: boolean;
+  chunks: boolean;
+  assets: boolean;
+  paint: boolean;
+};
+
+const INITIAL_BOOT_CHECKS: BootChecks = {
+  api: false,
+  chunks: false,
+  assets: false,
+  paint: false,
+};
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -124,12 +137,7 @@ function prefetchRoutes() {
 function App() {
   const [booting, setBooting] = useState(true);
   const [bootProgress, setBootProgress] = useState(8);
-  const [checks, setChecks] = useState({
-    api: false,
-    chunks: false,
-    assets: false,
-    paint: false,
-  });
+  const [checks, setChecks] = useState<BootChecks>(INITIAL_BOOT_CHECKS);
 
   const location = useLocation();
 
@@ -140,7 +148,7 @@ function App() {
   useEffect(() => {
     let mounted = true;
 
-    const updateProgress = (next: typeof checks) => {
+    const updateProgress = (next: BootChecks) => {
       if (!mounted) return;
       const doneCount = Object.values(next).filter(Boolean).length;
       const total = Object.keys(next).length;
@@ -154,13 +162,13 @@ function App() {
         warmHomeCritical(),
         delay(MIN_BOOT_MS),
       ]);
-      updateProgress({ ...checks, api: true });
+      updateProgress({ api: true, chunks: false, assets: false, paint: false });
 
       await preloadRoutes();
-      updateProgress({ ...checks, api: true, chunks: true });
+      updateProgress({ api: true, chunks: true, assets: false, paint: false });
 
       await preloadCriticalAssets();
-      updateProgress({ ...checks, api: true, chunks: true, assets: true });
+      updateProgress({ api: true, chunks: true, assets: true, paint: false });
 
       await waitForNextPaint();
       updateProgress({ api: true, chunks: true, assets: true, paint: true });

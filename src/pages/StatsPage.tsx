@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FACTION_ITEMS } from '../lib/content';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
+import { apiUrl } from '../lib/api-base';
 
 type StatusPayload = {
   playersOnline?: number;
@@ -77,8 +78,8 @@ export default function StatsPage() {
     let mounted = true;
 
     Promise.all([
-      fetch('/api/status', { headers: { Accept: 'application/json' } }),
-      fetch('/api/uptime?range=1d', { headers: { Accept: 'application/json' } }),
+      fetch(apiUrl('/status'), { headers: { Accept: 'application/json' } }),
+      fetch(apiUrl('/uptime?range=1d'), { headers: { Accept: 'application/json' } }),
     ])
       .then(async ([statusResponse, uptimeResponse]) => {
         if (!statusResponse.ok) throw new Error('status failed');

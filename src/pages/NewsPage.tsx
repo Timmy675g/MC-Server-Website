@@ -6,12 +6,12 @@ export default function NewsPage() {
   const [query, setQuery] = useState('');
   const [topic, setTopic] = useState('all');
   const [days, setDays] = useState('all');
+  const [now] = useState(() => Date.now());
 
   const topics = useMemo(() => ['all', ...Array.from(new Set(NEWS_ITEMS.map((item) => item.topic)))], []);
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    const now = Date.now();
 
     return NEWS_ITEMS.filter((item) => {
       const hitKeyword =
@@ -21,7 +21,7 @@ export default function NewsPage() {
         days === 'all' || (now - new Date(item.date).getTime()) <= Number(days) * 86400000;
       return hitKeyword && hitTopic && hitDate;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [days, query, topic]);
+  }, [days, now, query, topic]);
 
   return (
     <main className="container section reveal in-view">

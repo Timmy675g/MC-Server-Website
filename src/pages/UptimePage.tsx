@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { apiUrl } from '../lib/api-base';
 
 type UptimeComponent = {
   status?: string;
@@ -73,7 +74,7 @@ export default function UptimePage() {
   useEffect(() => {
     let mounted = true;
 
-    fetch(`/api/uptime?range=${encodeURIComponent(range)}`, {
+    fetch(apiUrl(`/uptime?range=${encodeURIComponent(range)}`), {
       method: 'GET',
       headers: { Accept: 'application/json' },
       cache: 'no-store',

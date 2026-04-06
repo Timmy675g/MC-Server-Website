@@ -1,6 +1,17 @@
 import type { ApiEnvelope, ServerStatus, UptimeStats } from '../types/api';
+import { apiUrl } from './api-base';
 
 const cache = new Map<string, Promise<unknown>>();
+
+type UptimeApiResponse = {
+  stats?: {
+    uptimePercent?: number | string | null;
+  };
+  current?: {
+    status?: string | null;
+    label?: string | null;
+  };
+};
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
@@ -31,7 +42,7 @@ function withCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
 
 export function getStatus(): Promise<ServerStatus> {
   return withCache('status', async () => {
-    const data = await fetchJson<ApiEnvelope<ServerStatus> | ServerStatus>('/api/status');
+    const data = await fetchJson<ApiEnvelope<ServerStatus> | ServerStatus>(apiUrl('/status'));
     const payload = ((data as ApiEnvelope<ServerStatus>).payload ?? data) as ServerStatus;
 
     return {
@@ -49,10 +60,12 @@ export function getStatus(): Promise<ServerStatus> {
 
 export function getUptime(): Promise<UptimeStats> {
   return withCache('uptime', async () => {
-    const data = await fetchJson<any>('/api/uptime?range=1d');
+    const data = await fetchJson<UptimeApiResponse>(apiUrl('/uptime?range=1d'));
+    const uptimePercent = data.stats?.uptimePercent;
+
     return {
-      uptimePercent: Number.isFinite(Number(data?.stats?.uptimePercent))
-        ? Number(data.stats.uptimePercent)
+      uptimePercent: Number.isFinite(Number(uptimePercent))
+        ? Number(uptimePercent)
         : null,
       currentStatus: String(data?.current?.status ?? 'unknown'),
       currentLabel: String(data?.current?.label ?? 'Unknown'),
@@ -73,7 +86,7 @@ export function prefetchApiInBackground(): void {
     void Promise.allSettled([
       getStatus(),
       getUptime(),
-      fetch('/api/players', { headers: { Accept: 'application/json' } }).catch(() => null),
+      fetch(apiUrl('/players'), { headers: { Accept: 'application/json' } }).catch(() => null),
     ]);
   };
 

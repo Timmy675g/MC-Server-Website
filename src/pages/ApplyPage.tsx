@@ -17,7 +17,19 @@ function nowMs(): number {
 export default function ApplyPage() {
   const [startedAt] = useState<number>(nowMs());
   const [error, setError] = useState<string>('');
-  const [showSuccess, setShowSuccess] = useState(false);
+  const [showSuccess, setShowSuccess] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+
+    const params = new URLSearchParams(window.location.search);
+    const isApplied = params.get('applied') === '1';
+    if (!isApplied) return false;
+
+    try {
+      return sessionStorage.getItem(APPLY_SUBMIT_FLAG) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [submitting, setSubmitting] = useState(false);
 
   const nextUrl = useMemo(() => {
@@ -47,15 +59,14 @@ export default function ApplyPage() {
     let submittedFromSession = false;
     try {
       submittedFromSession = sessionStorage.getItem(APPLY_SUBMIT_FLAG) === '1';
-    } catch (_) {
+    } catch {
       submittedFromSession = false;
     }
 
     if (isApplied && submittedFromSession) {
-      setShowSuccess(true);
       try {
         sessionStorage.removeItem(APPLY_SUBMIT_FLAG);
-      } catch (_) {
+      } catch {
         // Ignore storage errors.
       }
       window.history.replaceState({}, '', window.location.pathname);
@@ -119,14 +130,14 @@ export default function ApplyPage() {
         setError(`Please wait ${waitSec}s before submitting another application.`);
         return;
       }
-    } catch (_) {
+    } catch {
       // Ignore storage errors.
     }
 
     try {
       sessionStorage.setItem(APPLY_SUBMIT_FLAG, '1');
       localStorage.setItem(APPLY_LAST_SUBMIT_KEY, String(nowMs()));
-    } catch (_) {
+    } catch {
       // Ignore storage errors.
     }
 
