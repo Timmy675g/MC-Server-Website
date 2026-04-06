@@ -44,7 +44,14 @@ function withCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
 export function getStatus(): Promise<ServerStatus> {
   return withCache('status', async () => {
     const data = await fetchJson<ApiEnvelope<ServerStatus> | ServerStatus>(apiUrl('/status'));
-    const payload = unwrapPayload<ServerStatus>(data);
+    const payload = unwrapPayload<ServerStatus>(data, {
+      status: 'offline',
+      playersOnline: 0,
+      playersMax: 0,
+      uptime: 0,
+      javaPing: null,
+      bedrockPing: null,
+    });
 
     return {
       status: payload.status ?? 'offline',
@@ -62,7 +69,10 @@ export function getStatus(): Promise<ServerStatus> {
 export function getUptime(): Promise<UptimeStats> {
   return withCache('uptime', async () => {
     const data = await fetchJson<ApiEnvelope<UptimeApiResponse> | UptimeApiResponse>(apiUrl('/uptime?range=1d'));
-    const payload = unwrapPayload<UptimeApiResponse>(data);
+    const payload = unwrapPayload<UptimeApiResponse>(data, {
+      stats: { uptimePercent: null },
+      current: { status: 'unknown', label: 'Unknown' },
+    });
     const uptimePercent = payload.stats?.uptimePercent;
 
     return {

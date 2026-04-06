@@ -68,7 +68,13 @@ export default function PlayersPage() {
       })
       .then((raw) => {
         if (!mounted) return;
-        const data = unwrapPayload<PlayersResponse>(raw);
+        const data = unwrapPayload<PlayersResponse>(raw, {
+          status: 'offline',
+          source: 'fallback',
+          playersOnline: 0,
+          playersMax: 0,
+          players: [],
+        });
         setPayload(data);
         setServers(Array.isArray(data?.players) ? data.players : []);
       })

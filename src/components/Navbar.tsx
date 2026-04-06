@@ -75,7 +75,14 @@ export function Navbar() {
 
         if (!response.ok) return;
         const raw = await response.json();
-        const data = unwrapPayload<ServerStatus>(raw);
+        const data = unwrapPayload<ServerStatus>(raw, {
+          status: 'offline',
+          playersOnline: 0,
+          playersMax: 0,
+          uptime: 0,
+          javaPing: null,
+          bedrockPing: null,
+        });
         if (!mounted) return;
 
         setLiveStatus({
@@ -98,7 +105,7 @@ export function Navbar() {
     void pullStatus();
     const id = window.setInterval(() => {
       void pullStatus();
-    }, 60000);
+    }, 90000);
 
     return () => {
       mounted = false;

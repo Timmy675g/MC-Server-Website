@@ -92,8 +92,21 @@ export default function StatsPage() {
 
         if (!mounted) return;
 
-        const statusPayload = unwrapPayload<StatusPayload>(statusData);
-        const uptimePayload = unwrapPayload<UptimePayload>(uptimeData);
+        const statusPayload = unwrapPayload<StatusPayload>(statusData, {
+          playersOnline: 0,
+          playersMax: 0,
+          uptime: 0,
+          tps: null,
+          cpuUsage: null,
+          ramUsage: null,
+        });
+        const uptimePayload = unwrapPayload<UptimePayload>(uptimeData, {
+          stats: {
+            uptimePercent: undefined,
+            incidentMinutes: 0,
+            incidentFreeStreakMinutes: 0,
+          },
+        });
         setStatus(statusPayload);
         setUptime(uptimePayload);
         setHistory(pushHistory(Number(statusPayload.playersOnline ?? 0)));

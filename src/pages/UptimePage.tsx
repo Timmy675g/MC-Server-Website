@@ -87,7 +87,17 @@ export default function UptimePage() {
       })
       .then((raw) => {
         if (!mounted) return;
-        setPayload(unwrapPayload<UptimePayload>(raw));
+        setPayload(unwrapPayload<UptimePayload>(raw, {
+          timezone: 'Asia/Jakarta',
+          generatedAt: new Date().toISOString(),
+          range: { key: range },
+          components: {
+            minecraftServer: { status: 'unknown', label: 'Unknown' },
+            virtualMachine: { status: 'unknown', label: 'Unknown' },
+          },
+          componentTimelines: { minecraftServer: [], virtualMachine: [], ipPulling: [] },
+          overrides: { source: 'fallback', note: 'Missing uptime payload' },
+        }));
         setError(null);
       })
       .catch(() => {
