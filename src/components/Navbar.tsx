@@ -27,7 +27,7 @@ export function Navbar() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => getInitialTheme());
   const [isTogglingTheme, setIsTogglingTheme] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [liveStatus, setLiveStatus] = useState<ServerStatus | null>(null);
+  const [serverData, setServerData] = useState<ServerStatus[]>([]);
   const location = useLocation();
   const statsBlocked = openDropdown !== null || hoverLockCount > 0;
 
@@ -70,6 +70,8 @@ export function Navbar() {
         const response = await fetch(apiUrl('/status'), {
           method: 'GET',
           headers: { Accept: 'application/json' },
+          mode: 'cors',
+          credentials: 'omit',
           cache: 'no-store',
         });
 
@@ -85,7 +87,7 @@ export function Navbar() {
         });
         if (!mounted) return;
 
-        setLiveStatus({
+        const payload: ServerStatus = {
           status: String(data?.status ?? 'offline'),
           playersOnline: Number(data?.playersOnline ?? 0),
           playersMax: Number(data?.playersMax ?? 0),
@@ -94,7 +96,10 @@ export function Navbar() {
           bedrockPing: Number.isFinite(Number(data?.bedrockPing)) ? Number(data.bedrockPing) : null,
           version: data?.version,
           software: data?.software,
-        });
+        };
+
+        // Always replace with the latest payload so cards never multiply.
+        setServerData([payload]);
       } catch {
         // Ignore transient pull failures in navbar stats.
       } finally {
@@ -118,6 +123,8 @@ export function Navbar() {
     window.setTimeout(() => setIsTogglingTheme(false), 360);
     setTheme((value) => (value === 'dark' ? 'light' : 'dark'));
   };
+
+  const liveStatus = serverData[0] ?? null;
 
   const javaPingText = liveStatus?.javaPing !== null && liveStatus?.javaPing !== undefined
     ? `${Math.round(liveStatus.javaPing)} ms`

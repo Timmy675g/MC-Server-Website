@@ -13,8 +13,16 @@ export function apiUrl(path: string): string {
   const normalizedPath = normalizePath(path);
   const configuredBase = String(import.meta.env.VITE_API_BASE || '').trim();
 
-  if (!configuredBase) return normalizedPath;
+  const normalizedConfiguredBase = configuredBase
+    ? configuredBase.replace(/^http:\/\/api\.survivalkendy\.systems/i, 'https://api.survivalkendy.systems')
+    : '';
 
-  const base = trimTrailingSlash(configuredBase);
+  if (!normalizedConfiguredBase) {
+    const fallbackBase = import.meta.env.PROD ? 'https://api.survivalkendy.systems' : '';
+    if (!fallbackBase) return normalizedPath;
+    return `${trimTrailingSlash(fallbackBase)}${normalizedPath}`;
+  }
+
+  const base = trimTrailingSlash(normalizedConfiguredBase);
   return `${base}${normalizedPath}`;
 }
