@@ -1,5 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { NEWS_ITEMS, formatDate } from '../lib/content';
+import { assetUrl } from '../lib/asset-url';
 
 export default function NewsArticlePage() {
   const { id } = useParams();
@@ -22,7 +23,7 @@ export default function NewsArticlePage() {
     <main className="container section reveal in-view">
       <article className="card" style={{ gridColumn: '1 / -1' }}>
         <img
-          src={item.thumbnail}
+          src={assetUrl(item.thumbnail)}
           alt={item.title}
           loading="lazy"
           decoding="async"

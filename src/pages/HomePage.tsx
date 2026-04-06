@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import { getStatus, getUptime } from '../lib/api';
+import { assetUrl } from '../lib/asset-url';
 import { FACTION_ITEMS, NEWS_ITEMS, formatDate } from '../lib/content';
 import type { ServerStatus, UptimeStats } from '../types/api';
 
@@ -221,7 +222,7 @@ export default function HomePage() {
     const preload = recentNews.map((item) => {
       const image = new Image();
       image.decoding = 'async';
-      image.src = item.thumbnail;
+      image.src = assetUrl(item.thumbnail);
       return image;
     });
 
@@ -254,8 +255,8 @@ export default function HomePage() {
   return (
     <>
       <section className="home-intro" aria-label="Intro video">
-        <video className="home-intro-video" autoPlay muted loop playsInline preload="metadata" poster="/assets/icon.png">
-          <source src="/assets/Video.mp4" type="video/mp4" />
+        <video className="home-intro-video" autoPlay muted loop playsInline preload="metadata" poster={assetUrl('/assets/icon.png')}>
+          <source src={assetUrl('/assets/Video.mp4')} type="video/mp4" />
         </video>
         <div className="home-intro-overlay" />
         <div className="home-intro-content container">
@@ -298,7 +299,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="hero-image-card">
-            <img src="/assets/icon.png" alt="Minecraft server icon" decoding="async" fetchPriority="high" />
+            <img src={assetUrl('/assets/icon.png')} alt="Minecraft server icon" decoding="async" fetchPriority="high" />
             <p className="hero-caption">A picture of our server icon!</p>
           </div>
         </div>
@@ -402,7 +403,7 @@ export default function HomePage() {
                   }
                 }}
               >
-                <img className="news-rail-media" src={activeNews.thumbnail} alt={activeNews.title} loading="lazy" decoding="async" />
+                <img className="news-rail-media" src={assetUrl(activeNews.thumbnail)} alt={activeNews.title} loading="lazy" decoding="async" />
                 <div className="news-rail-overlay" />
                 <div className="news-rail-content">
                   <p className="news-rail-kicker">{activeNews.id}</p>

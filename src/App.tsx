@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { LoadingScreen } from './components/LoadingScreen';
 import { SiteLayout } from './layouts/SiteLayout';
 import { prefetchApiInBackground, warmHomeCritical } from './lib/api';
+import { assetUrl } from './lib/asset-url';
 import { NEWS_ITEMS } from './lib/content';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
@@ -92,11 +93,11 @@ function preloadVideoMetadata(src: string): Promise<void> {
 }
 
 async function preloadCriticalAssets() {
-  const newsThumbs = NEWS_ITEMS.slice(0, 4).map((item) => preloadImage(item.thumbnail));
+  const newsThumbs = NEWS_ITEMS.slice(0, 4).map((item) => preloadImage(assetUrl(item.thumbnail)));
 
   await Promise.allSettled([
-    preloadImage('/assets/icon.png'),
-    preloadVideoMetadata('/assets/Video.mp4'),
+    preloadImage(assetUrl('/assets/icon.png')),
+    preloadVideoMetadata(assetUrl('/assets/Video.mp4')),
     ...newsThumbs,
   ]);
 }

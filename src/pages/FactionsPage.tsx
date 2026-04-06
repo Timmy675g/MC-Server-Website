@@ -1,4 +1,5 @@
 import { FACTION_ITEMS } from '../lib/content';
+import { assetUrl } from '../lib/asset-url';
 
 export default function FactionsPage() {
   return (
@@ -10,7 +11,7 @@ export default function FactionsPage() {
         <h3>Current Spawn Map</h3>
         <img
           className="news-thumb faction-map-image"
-          src="/assets/factions.png"
+          src={assetUrl('/assets/factions.png')}
           alt="Territory map"
           loading="lazy"
           decoding="async"

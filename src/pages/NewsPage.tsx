@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useMemo, useState } from 'react';
 import { NEWS_ITEMS, formatDate } from '../lib/content';
+import { assetUrl } from '../lib/asset-url';
 
 export default function NewsPage() {
   const [query, setQuery] = useState('');
@@ -55,7 +56,7 @@ export default function NewsPage() {
         {filtered.map((item) => (
           <article key={item.id} className="card" style={{ gridColumn: '1 / -1' }}>
             <div className="two-col">
-              <img src={item.thumbnail} alt={item.title} loading="lazy" decoding="async" className="news-thumb" />
+              <img src={assetUrl(item.thumbnail)} alt={item.title} loading="lazy" decoding="async" className="news-thumb" />
               <div>
                 <h3>{item.title}</h3>
                 <p className="meta">{item.author} • {formatDate(item.date)} • {item.topic}</p>
