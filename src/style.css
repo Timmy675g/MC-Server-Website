@@ -119,6 +119,29 @@ body.nav-open-mobile {
     pointer-events: none;
 }
 
+body.mobile-lite .page-loader,
+body.data-saver .page-loader {
+    backdrop-filter: none;
+}
+
+body.mobile-lite .page-loader::before,
+body.mobile-lite .page-loader::after,
+body.mobile-lite .page-loader-logo,
+body.mobile-lite .page-loader-track span::after,
+body.data-saver .page-loader::before,
+body.data-saver .page-loader::after,
+body.data-saver .page-loader-logo,
+body.data-saver .page-loader-track span::after {
+    animation: none !important;
+}
+
+body.mobile-lite .page-loader::before,
+body.mobile-lite .page-loader::after,
+body.data-saver .page-loader::before,
+body.data-saver .page-loader::after {
+    display: none;
+}
+
 .page-loader-panel {
     width: min(420px, 100%);
     border: 1px solid rgba(148, 163, 184, 0.46);

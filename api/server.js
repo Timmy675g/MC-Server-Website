@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -12,7 +13,18 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(express.json());
+
+const limiter = rateLimit({
+  windowMs: 1 * 120 * 1000,
+  limit: 100,
+  message: 'Too many requests, slow down!',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(limiter);
 
 const allowedOrigins = String(process.env.CORS_ORIGINS || '*')
   .split(',')

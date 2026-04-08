@@ -20,7 +20,7 @@ const RulesPage = lazy(() => import('./pages/RulesPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
 
-const MIN_BOOT_MS = 900;
+const MIN_BOOT_MS = 260;
 const ROUTE_FALLBACK_PROGRESS = 96;
 type BootChecks = {
   api: boolean;
@@ -46,6 +46,38 @@ function waitForNextPaint() {
       window.requestAnimationFrame(() => resolve());
     });
   });
+}
+
+function scheduleIdleTask(task: () => void, timeout = 1500) {
+  const requestIdle = (window as Window & {
+    requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+  }).requestIdleCallback;
+
+  if (requestIdle) {
+    requestIdle(task, { timeout });
+    return;
+  }
+
+  window.setTimeout(task, 280);
+}
+
+function isMobileConstrainedDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+  const narrowScreen = window.matchMedia('(max-width: 980px)').matches;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const nav = navigator as Navigator & {
+    connection?: { saveData?: boolean };
+    deviceMemory?: number;
+    hardwareConcurrency?: number;
+  };
+
+  const saveData = Boolean(nav.connection?.saveData);
+  const lowMemory = typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 4;
+  const lowCpu = typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency <= 6;
+
+  return coarsePointer || narrowScreen || reduceMotion || saveData || lowMemory || lowCpu;
 }
 
 function preloadImage(src: string): Promise<void> {
@@ -147,7 +179,33 @@ function App() {
   }, [location.pathname]);
 
   useEffect(() => {
+    const applyPerformanceClasses = () => {
+      const nav = navigator as Navigator & { connection?: { saveData?: boolean } };
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const saveData = Boolean(nav.connection?.saveData);
+      const lite = isMobileConstrainedDevice();
+
+      document.body.classList.toggle('mobile-lite', lite);
+      document.body.classList.toggle('data-saver', saveData || reduceMotion);
+    };
+
+    applyPerformanceClasses();
+    window.addEventListener('resize', applyPerformanceClasses);
+
+    const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const onReducedMotionChange = () => applyPerformanceClasses();
+    reducedMotionQuery.addEventListener('change', onReducedMotionChange);
+
+    return () => {
+      window.removeEventListener('resize', applyPerformanceClasses);
+      reducedMotionQuery.removeEventListener('change', onReducedMotionChange);
+      document.body.classList.remove('mobile-lite', 'data-saver');
+    };
+  }, []);
+
+  useEffect(() => {
     let mounted = true;
+    const constrainedDevice = isMobileConstrainedDevice();
 
     const updateProgress = (next: BootChecks) => {
       if (!mounted) return;
@@ -161,14 +219,19 @@ function App() {
     const runBoot = async () => {
       await Promise.allSettled([
         warmHomeCritical(),
-        delay(MIN_BOOT_MS),
+        delay(constrainedDevice ? 140 : MIN_BOOT_MS),
       ]);
       updateProgress({ api: true, chunks: false, assets: false, paint: false });
 
-      await preloadRoutes();
-      updateProgress({ api: true, chunks: true, assets: false, paint: false });
+      // Keep LCP path lean: defer heavy route/asset preloads to idle time.
+      scheduleIdleTask(() => {
+        void preloadRoutes();
+      }, constrainedDevice ? 2200 : 1200);
 
-      await preloadCriticalAssets();
+      scheduleIdleTask(() => {
+        void preloadCriticalAssets();
+      }, constrainedDevice ? 3200 : 1800);
+
       updateProgress({ api: true, chunks: true, assets: true, paint: false });
 
       await waitForNextPaint();
@@ -177,8 +240,14 @@ function App() {
       if (!mounted) return;
       setBootProgress(100);
       setBooting(false);
-      prefetchApiInBackground();
-      prefetchRoutes();
+
+      scheduleIdleTask(() => {
+        prefetchApiInBackground();
+      }, 1000);
+
+      scheduleIdleTask(() => {
+        prefetchRoutes();
+      }, constrainedDevice ? 2800 : 1800);
     };
 
     void runBoot();

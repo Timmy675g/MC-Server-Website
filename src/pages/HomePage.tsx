@@ -28,6 +28,22 @@ export default function HomePage() {
   const [isRailPaused, setIsRailPaused] = useState(false);
   const [railAnim, setRailAnim] = useState<'swipe-left' | 'swipe-right'>('swipe-left');
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
+  const liteMode = useMemo(() => {
+    const nav = navigator as Navigator & {
+      connection?: { saveData?: boolean };
+      deviceMemory?: number;
+      hardwareConcurrency?: number;
+    };
+
+    const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+    const narrowScreen = window.matchMedia('(max-width: 980px)').matches;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const saveData = Boolean(nav.connection?.saveData);
+    const lowMemory = typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 4;
+    const lowCpu = typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency <= 6;
+
+    return coarsePointer || narrowScreen || reduceMotion || saveData || lowMemory || lowCpu;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -49,6 +65,8 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    if (liteMode) return;
+
     const text = typingWords[typingIndex];
     let frame = 0;
     let deleting = false;
@@ -76,7 +94,7 @@ export default function HomePage() {
 
     const timer = window.setTimeout(tick, 220);
     return () => window.clearTimeout(timer);
-  }, [typingIndex, typingWords]);
+  }, [liteMode, typingIndex, typingWords]);
 
   useEffect(() => {
     const video = document.querySelector('.home-intro-video');
@@ -95,6 +113,14 @@ export default function HomePage() {
         });
       }
     };
+
+    if (liteMode) {
+      video.addEventListener('loadeddata', tryPlay);
+      tryPlay();
+      return () => {
+        video.removeEventListener('loadeddata', tryPlay);
+      };
+    }
 
     const onUserGesture = () => tryPlay();
     const onVisible = () => {
@@ -125,7 +151,7 @@ export default function HomePage() {
       window.removeEventListener('keydown', onUserGesture);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, []);
+  }, [liteMode]);
 
   useEffect(() => {
     const intro = document.querySelector('.home-intro');
