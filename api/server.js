@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { status as statusJava, statusBedrock } from 'minecraft-server-util';
+import 'dotenv/config';
 
 const app = express();
 app.use(express.json());
@@ -191,9 +192,30 @@ function parseStatusPageSlug(urlString) {
   try {
     const parsed = new URL(urlString);
     const segments = parsed.pathname.split('/').filter(Boolean);
+
+    // Supports:
+    // - /status/<slug>
+    // - /api/status-page/<slug>
+    // - /api/status-page/heartbeat/<slug>
+    const heartbeatIndex = segments.findIndex((segment) => segment === 'heartbeat');
+    if (heartbeatIndex >= 0 && segments[heartbeatIndex + 1]) {
+      return segments[heartbeatIndex + 1];
+    }
+
+    const statusPageIndex = segments.findIndex((segment) => segment === 'status-page');
+    if (statusPageIndex >= 0 && segments[statusPageIndex + 1] && segments[statusPageIndex + 1] !== 'heartbeat') {
+      return segments[statusPageIndex + 1];
+    }
+
+    const statusIndex = segments.findIndex((segment) => segment === 'status');
+    if (statusIndex >= 0 && segments[statusIndex + 1]) {
+      return segments[statusIndex + 1];
+    }
+
     return segments[segments.length - 1] || '';
   } catch {
-    return '';
+    // Fallback for plain slug / non-URL inputs.
+    return String(urlString).trim().replace(/^\/+|\/+$/g, '').split('/').filter(Boolean).pop() || '';
   }
 }
 
@@ -425,4 +447,9 @@ app.get('/uptime', async (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[api] listening on http://0.0.0.0:${PORT}`);
+  if (UPTIME_KUMA_STATUS_PAGE_URL) {
+    console.log(`[api] UPTIME_KUMA_STATUS_PAGE_URL loaded: ${UPTIME_KUMA_STATUS_PAGE_URL}`);
+  } else {
+    console.log('[api] UPTIME_KUMA_STATUS_PAGE_URL is missing or empty');
+  }
 });
