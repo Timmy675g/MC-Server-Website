@@ -7,13 +7,17 @@ const app = express();
 app.use(express.json());
 
 function envString(name, fallback) {
+  const safeFallback = typeof fallback === 'string' ? fallback : '';
+  if (!name) return safeFallback;
   const value = String(process.env[name] ?? '').trim();
-  return value || fallback;
+  return value || safeFallback;
 }
 
 function envNumber(name, fallback) {
+  const safeFallback = Number.isFinite(Number(fallback)) ? Number(fallback) : 0;
+  if (!name) return safeFallback;
   const value = Number(process.env[name]);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
+  return Number.isFinite(value) && value > 0 ? value : safeFallback;
 }
 
 function getClientIp(req) {
@@ -138,6 +142,36 @@ function normalizeStatusFromSettled(javaData, bedrockData, bedrockPingMs) {
   };
 }
 
+function buildOfflineStatus(errorMessage) {
+  return {
+    status: 'offline',
+    playersOnline: 0,
+    playersMax: 0,
+    uptime: 0,
+    javaPing: null,
+    bedrockPing: null,
+    version: undefined,
+    software: undefined,
+    java: {
+      online: false,
+      port: MC_SERVER_PORT,
+      playersOnline: 0,
+      playersMax: 0,
+      ping: null,
+    },
+    bedrock: {
+      online: false,
+      port: BEDROCK_PORT,
+      playersOnline: 0,
+      playersMax: 0,
+      ping: null,
+    },
+    players: [],
+    source: 'minecraft-server-util',
+    ...(errorMessage ? { error: errorMessage } : {}),
+  };
+}
+
 function probeJavaStatus() {
   return statusJava(MC_SERVER_HOST, MC_SERVER_PORT, { timeout: STATUS_PROBE_TIMEOUT_MS, enableSRV: true });
 }
@@ -235,7 +269,10 @@ async function getLiveStatus() {
   if (!javaData && !bedrockData) {
     const javaReason = javaRes.status === 'rejected' ? String(javaRes.reason?.message || javaRes.reason || 'Java status failed') : '';
     const bedrockReason = bedrockRes.status === 'rejected' ? String(bedrockRes.reason?.message || bedrockRes.reason || 'Bedrock status failed') : '';
-    throw new Error(`Unable to fetch both Java and Bedrock status. ${javaReason} ${bedrockReason}`.trim());
+    const offline = buildOfflineStatus(`Unable to fetch both Java and Bedrock status. ${javaReason} ${bedrockReason}`.trim());
+    cachedStatus = offline;
+    cachedStatusAt = nowMs();
+    return offline;
   }
 
   const normalized = normalizeStatusFromSettled(javaData, bedrockData, bedrockPingMs);
@@ -351,17 +388,7 @@ app.get('/status', async (_req, res) => {
     const status = await getLiveStatus();
     res.json({ payload: status });
   } catch (error) {
-    res.status(502).json({
-      payload: {
-        status: 'offline',
-        playersOnline: 0,
-        playersMax: 0,
-        uptime: 0,
-        javaPing: null,
-        bedrockPing: null,
-        error: String(error?.message || error)
-      }
-    });
+    res.json({ payload: buildOfflineStatus(String(error?.message || error)) });
   }
 });
 
@@ -376,7 +403,7 @@ app.get('/players', async (_req, res) => {
       players: Array.isArray(status.players) ? status.players : [],
     });
   } catch (error) {
-    res.status(502).json({
+    res.json({
       status: 'offline',
       source: 'fallback',
       playersOnline: 0,
