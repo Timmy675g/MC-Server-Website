@@ -1,32 +1,51 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-let lastStatusData = null;
-let lastStatusTime = 0;
-let lastUptimeData = null;
-let lastUptimeTime = 0;
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { status as statusJava, statusBedrock } from 'minecraft-server-util';
 
 const app = express();
-app.set('trust proxy', 1);
 app.use(express.json());
 
+function envString(name, fallback) {
+  const value = String(process.env[name] ?? '').trim();
+  return value || fallback;
+}
+
+function envNumber(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function getClientIp(req) {
+  const cfConnectingIp = req.headers['cf-connecting-ip'];
+  if (typeof cfConnectingIp === 'string' && cfConnectingIp.trim()) {
+    return cfConnectingIp.trim();
+  }
+
+  const forwardedFor = req.headers['x-forwarded-for'];
+  if (typeof forwardedFor === 'string' && forwardedFor.trim()) {
+    return forwardedFor.split(',')[0].trim();
+  }
+
+  return req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+// Cloudflare + reverse-proxy safe. Express will honor forwarded headers,
+// while rate-limit keyGenerator below prioritizes CF-Connecting-IP.
+app.set('trust proxy', true);
+
 const limiter = rateLimit({
-  windowMs: 1 * 120 * 1000,
-  limit: 100,
+  windowMs: envNumber('RATE_LIMIT_WINDOW_MS', 1 * 120 * 1000),
+  limit: envNumber('RATE_LIMIT_LIMIT', 100),
   message: 'Too many requests, slow down!',
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
 });
 
 app.use(limiter);
 
-const allowedOrigins = String(process.env.CORS_ORIGINS || '*')
+const allowedOrigins = envString('CORS_ORIGINS', '*')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
@@ -41,20 +60,17 @@ app.use(
   }),
 );
 
-const PORT = Number(process.env.PORT || 3001);
-const MC_SERVER_PORT = Number(process.env.MC_SERVER_PORT || 25565);
-const BEDROCK_PORT = Number(process.env.BEDROCK_PORT || 19132);
-const UPTIME_KUMA_STATUS_PAGE_URL = String(process.env.UPTIME_KUMA_STATUS_PAGE_URL || '').trim();
-const UPTIME_KUMA_MONITOR_MINECRAFT = String(process.env.UPTIME_KUMA_MONITOR_MINECRAFT || '').trim();
-const UPTIME_KUMA_MONITOR_VM = String(process.env.UPTIME_KUMA_MONITOR_VM || '').trim();
+const PORT = envNumber('PORT', 3001);
+const MC_SERVER_HOST = envString('MC_SERVER_HOST', 'play.survivalkendy.systems');
+const MC_SERVER_PORT = envNumber('MC_SERVER_PORT', 25565);
+const BEDROCK_PORT = envNumber('BEDROCK_PORT', 19132);
+const UPTIME_KUMA_STATUS_PAGE_URL = envString('UPTIME_KUMA_STATUS_PAGE_URL', '');
+const UPTIME_KUMA_MONITOR_MINECRAFT = envString('UPTIME_KUMA_MONITOR_MINECRAFT', '');
+const UPTIME_KUMA_MONITOR_VM = envString('UPTIME_KUMA_MONITOR_VM', '');
+const STATUS_PROBE_TIMEOUT_MS = envNumber('STATUS_PROBE_TIMEOUT_MS', 6000);
 
-const hosts = String(process.env.MC_SERVER_HOSTS || '35.219.114.141')
-  .split(',')
-  .map((value) => value.trim())
-  .filter(Boolean);
-
-const STATUS_CACHE_TTL_MS = 15_000;
-const UPTIME_CACHE_TTL_MS = 20_000;
+const STATUS_CACHE_TTL_MS = envNumber('STATUS_CACHE_TTL_MS', 15_000);
+const UPTIME_CACHE_TTL_MS = envNumber('UPTIME_CACHE_TTL_MS', 20_000);
 
 let cachedStatus = null;
 let cachedStatusAt = 0;
@@ -83,27 +99,56 @@ async function fetchJson(url, timeoutMs = 6000) {
   }
 }
 
-function normalizeJavaStatus(javaData, bedrockData) {
-  const online = Boolean(javaData?.online);
+function normalizePlayers(javaData) {
+  const list = Array.isArray(javaData?.players?.sample) ? javaData.players.sample : [];
+  return list.map((item) => ({
+    username: String(item?.name || 'Unknown'),
+    uuid: String(item?.id || ''),
+  }));
+}
+
+function normalizeStatusFromSettled(javaData, bedrockData, bedrockPingMs) {
+  const javaOnline = Boolean(javaData);
+  const bedrockOnline = Boolean(bedrockData);
+  const online = javaOnline || bedrockOnline;
 
   return {
     status: online ? 'online' : 'offline',
-    playersOnline: Number(javaData?.players?.online ?? 0),
-    playersMax: Number(javaData?.players?.max ?? 0),
+    playersOnline: Number(javaData?.players?.online ?? bedrockData?.players?.online ?? 0),
+    playersMax: Number(javaData?.players?.max ?? bedrockData?.players?.max ?? 0),
     uptime: 0,
-    javaPing: Number.isFinite(Number(javaData?.latency)) ? Number(javaData.latency) : null,
-    bedrockPing: Number.isFinite(Number(bedrockData?.latency)) ? Number(bedrockData.latency) : null,
-    version: javaData?.version?.name_clean || javaData?.version?.name_raw || javaData?.version?.name || undefined,
-    software: Array.isArray(javaData?.motd?.clean) ? javaData.motd.clean.join(' ') : (javaData?.motd?.clean || undefined),
+    javaPing: Number.isFinite(Number(javaData?.roundTripLatency)) ? Number(javaData.roundTripLatency) : null,
+    bedrockPing: Number.isFinite(Number(bedrockPingMs)) ? Number(bedrockPingMs) : null,
+    version: javaData?.version?.name || bedrockData?.version?.name || undefined,
+    software: javaData?.motd?.clean || bedrockData?.motd?.clean || undefined,
+    java: {
+      online: javaOnline,
+      port: MC_SERVER_PORT,
+      playersOnline: Number(javaData?.players?.online ?? 0),
+      playersMax: Number(javaData?.players?.max ?? 0),
+      ping: Number.isFinite(Number(javaData?.roundTripLatency)) ? Number(javaData.roundTripLatency) : null,
+    },
+    bedrock: {
+      online: bedrockOnline,
+      port: BEDROCK_PORT,
+      playersOnline: Number(bedrockData?.players?.online ?? 0),
+      playersMax: Number(bedrockData?.players?.max ?? 0),
+      ping: Number.isFinite(Number(bedrockPingMs)) ? Number(bedrockPingMs) : null,
+    },
   };
 }
 
-function normalizePlayers(javaData) {
-  const list = Array.isArray(javaData?.players?.list) ? javaData.players.list : [];
-  return list.map((item) => ({
-    username: String(item?.name_clean || item?.name_raw || item?.name || 'Unknown'),
-    uuid: String(item?.uuid || ''),
-  }));
+function probeJavaStatus() {
+  return statusJava(MC_SERVER_HOST, MC_SERVER_PORT, { timeout: STATUS_PROBE_TIMEOUT_MS, enableSRV: true });
+}
+
+async function probeBedrockStatus() {
+  const startedAt = Date.now();
+  const response = await statusBedrock(MC_SERVER_HOST, BEDROCK_PORT, { timeout: STATUS_PROBE_TIMEOUT_MS, enableSRV: true });
+  return {
+    data: response,
+    ping: Date.now() - startedAt,
+  };
 }
 
 function parseStatusPageSlug(urlString) {
@@ -177,27 +222,28 @@ function summarizeUptime(timeline) {
 async function getLiveStatus() {
   if (cachedStatus && nowMs() - cachedStatusAt < STATUS_CACHE_TTL_MS) return cachedStatus;
 
-  const javaUrl = `https://api.mcstatus.io/v2/status/java/${encodeURIComponent(hosts[0])}:${MC_SERVER_PORT}`;
-  const bedrockUrl = `https://api.mcstatus.io/v2/status/bedrock/${encodeURIComponent(hosts[0])}:${BEDROCK_PORT}`;
-
   const [javaRes, bedrockRes] = await Promise.allSettled([
-    fetchJson(javaUrl),
-    fetchJson(bedrockUrl),
+    probeJavaStatus(),
+    probeBedrockStatus(),
   ]);
 
   const javaData = javaRes.status === 'fulfilled' ? javaRes.value : null;
-  const bedrockData = bedrockRes.status === 'fulfilled' ? bedrockRes.value : null;
+  const bedrockProbe = bedrockRes.status === 'fulfilled' ? bedrockRes.value : null;
+  const bedrockData = bedrockProbe?.data ?? null;
+  const bedrockPingMs = bedrockProbe?.ping ?? null;
 
-  if (!javaData) {
-    throw new Error('Unable to fetch Java server status');
+  if (!javaData && !bedrockData) {
+    const javaReason = javaRes.status === 'rejected' ? String(javaRes.reason?.message || javaRes.reason || 'Java status failed') : '';
+    const bedrockReason = bedrockRes.status === 'rejected' ? String(bedrockRes.reason?.message || bedrockRes.reason || 'Bedrock status failed') : '';
+    throw new Error(`Unable to fetch both Java and Bedrock status. ${javaReason} ${bedrockReason}`.trim());
   }
 
-  const normalized = normalizeJavaStatus(javaData, bedrockData);
+  const normalized = normalizeStatusFromSettled(javaData, bedrockData, bedrockPingMs);
 
   cachedStatus = {
     ...normalized,
     players: normalizePlayers(javaData),
-    source: 'mcstatus.io',
+    source: 'minecraft-server-util',
   };
   cachedStatusAt = nowMs();
 
@@ -300,20 +346,9 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'survivalkendy-api', time: new Date().toISOString() });
 });
 
-let lastRequestTime = 0;
-
 app.get('/status', async (_req, res) => {
-  const now = Date.now();
-  
-  // If we fetched data less than 10 seconds ago, just send the old one
-  if (lastStatusData && (now - lastStatusTime < 10000)) {
-    return res.json({ payload: lastStatusData });
-  }
-
   try {
     const status = await getLiveStatus();
-    lastStatusData = status;
-    lastStatusTime = now;
     res.json({ payload: status });
   } catch (error) {
     res.status(502).json({
@@ -335,7 +370,7 @@ app.get('/players', async (_req, res) => {
     const status = await getLiveStatus();
     res.json({
       status: status.status,
-      source: status.source || 'mcstatus.io',
+      source: status.source || 'minecraft-server-util',
       playersOnline: status.playersOnline,
       playersMax: status.playersMax,
       players: Array.isArray(status.players) ? status.players : [],
@@ -353,15 +388,8 @@ app.get('/players', async (_req, res) => {
 });
 
 app.get('/uptime', async (req, res) => {
-  const now = Date.now();
-  if (lastUptimeData && (now - lastUptimeTime < 15000)) {
-    return res.json({ payload: lastUptimeData });
-  }
-
   try {
     const data = await getLiveUptime(req.query?.range || '30d');
-    lastUptimeData = data;
-    lastUptimeTime = now;
     res.json({ payload: data });
   } catch (error) {
     res.status(502).json({ payload: { status: 'error' } });
