@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState, type ReactElement } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { LoadingScreen } from './components/LoadingScreen';
@@ -6,6 +6,7 @@ import { SiteLayout } from './layouts/SiteLayout';
 import { prefetchApiInBackground, warmHomeCritical } from './lib/api';
 import { assetUrl } from './lib/asset-url';
 import { NEWS_ITEMS } from './lib/content';
+import { isAdminAuthenticated } from './lib/auth';
 
 const HomePage = lazy(() => import('./pages/HomePage'));
 const GuidePage = lazy(() => import('./pages/GuidePage'));
@@ -19,6 +20,8 @@ const FactionsPage = lazy(() => import('./pages/FactionsPage'));
 const RulesPage = lazy(() => import('./pages/RulesPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
 
 const MIN_BOOT_MS = 260;
 const ROUTE_FALLBACK_PROGRESS = 96;
@@ -268,6 +271,10 @@ function App() {
     return <LoadingScreen progress={bootProgress} checks={bootChecks} />;
   }
 
+  const requireAdmin = (element: ReactElement) => (
+    isAdminAuthenticated() ? element : <Navigate to="/login" replace />
+  );
+
   return (
     <Suspense
       fallback={
@@ -298,6 +305,8 @@ function App() {
           <Route path="/rules" element={<RulesPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/events" element={<EventsPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/admin" element={requireAdmin(<AdminPage />)} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

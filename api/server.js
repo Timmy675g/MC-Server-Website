@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { io } from 'socket.io-client';
 import { status as statusJava, statusBedrock } from 'minecraft-server-util';
 import 'dotenv/config';
 
@@ -73,6 +74,11 @@ const UPTIME_KUMA_STATUS_PAGE_URL = envString('UPTIME_KUMA_STATUS_PAGE_URL', '')
 const UPTIME_KUMA_MONITOR_MINECRAFT = envString('UPTIME_KUMA_MONITOR_MINECRAFT', '');
 const UPTIME_KUMA_MONITOR_VM = envString('UPTIME_KUMA_MONITOR_VM', '');
 const STATUS_PROBE_TIMEOUT_MS = envNumber('STATUS_PROBE_TIMEOUT_MS', 6000);
+const KUMA_URL = envString('KUMA_URL', '');
+const KUMA_USER = envString('KUMA_USER', '');
+const KUMA_PASS = envString('KUMA_PASS', '');
+const KUMA_MONITOR_ID = envNumber('KUMA_MONITOR_ID', 1);
+const KUMA_SOCKET_TIMEOUT_MS = envNumber('KUMA_SOCKET_TIMEOUT_MS', 10_000);
 
 const STATUS_CACHE_TTL_MS = envNumber('STATUS_CACHE_TTL_MS', 15_000);
 const UPTIME_CACHE_TTL_MS = envNumber('UPTIME_CACHE_TTL_MS', 20_000);
@@ -81,9 +87,178 @@ let cachedStatus = null;
 let cachedStatusAt = 0;
 let cachedUptime = null;
 let cachedUptimeAt = 0;
+const maintenanceState = {
+  untilMs: 0,
+  startedAt: null,
+  durationKey: null,
+};
+let maintenanceExpiryTimer = null;
 
 function nowMs() {
   return Date.now();
+}
+
+function clearMaintenanceState() {
+  maintenanceState.untilMs = 0;
+  maintenanceState.startedAt = null;
+  maintenanceState.durationKey = null;
+  cachedStatusAt = 0;
+}
+
+function getKumaSocketBaseUrl() {
+  if (KUMA_URL) return KUMA_URL;
+  if (!UPTIME_KUMA_STATUS_PAGE_URL) return '';
+
+  try {
+    const parsed = new URL(UPTIME_KUMA_STATUS_PAGE_URL);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return '';
+  }
+}
+
+async function syncKumaMaintenance(active) {
+  const socketBaseUrl = getKumaSocketBaseUrl();
+  if (!socketBaseUrl || !KUMA_USER || !KUMA_PASS) {
+    throw new Error('Kuma sync missing config. Ensure KUMA_URL, KUMA_USER, and KUMA_PASS are set.');
+  }
+
+  const action = active ? 'pauseMonitor' : 'resumeMonitor';
+  const socket = io(socketBaseUrl, {
+    transports: ['websocket'],
+    reconnection: false,
+    timeout: KUMA_SOCKET_TIMEOUT_MS,
+  });
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      socket.disconnect();
+      reject(new Error(`Kuma ${action} timed out.`));
+    }, KUMA_SOCKET_TIMEOUT_MS + 2000);
+
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      socket.disconnect();
+      if (error) reject(error);
+      else resolve();
+    };
+
+    socket.on('connect_error', (error) => {
+      finish(new Error(`Kuma connection failed: ${error?.message || String(error)}`));
+    });
+
+    socket.on('connect', () => {
+      socket.emit('login', { username: KUMA_USER, password: KUMA_PASS }, (loginResult) => {
+        const loginOk = loginResult === true
+          || loginResult?.ok === true
+          || loginResult?.status === 'ok'
+          || loginResult?.token;
+
+        if (!loginOk) {
+          finish(new Error(`Kuma login failed: ${JSON.stringify(loginResult || {})}`));
+          return;
+        }
+
+        socket.emit(action, KUMA_MONITOR_ID, (actionResult) => {
+          const actionOk = actionResult === undefined
+            || actionResult === null
+            || actionResult === true
+            || actionResult?.ok === true
+            || actionResult?.status === 'ok';
+
+          if (!actionOk) {
+            finish(new Error(`Kuma ${action} failed: ${JSON.stringify(actionResult || {})}`));
+            return;
+          }
+
+          finish(null);
+        });
+      });
+    });
+  });
+}
+
+function scheduleMaintenanceExpiry(delayMs) {
+  if (maintenanceExpiryTimer) {
+    clearTimeout(maintenanceExpiryTimer);
+    maintenanceExpiryTimer = null;
+  }
+
+  maintenanceExpiryTimer = setTimeout(() => {
+    void syncKumaMaintenance(false)
+      .then(() => {
+        clearMaintenanceState();
+      })
+      .catch((error) => {
+        console.error('[api] Failed to resume Kuma monitor after maintenance TTL:', String(error?.message || error));
+        maintenanceState.untilMs = nowMs() + 60_000;
+        scheduleMaintenanceExpiry(60_000);
+      });
+  }, Math.max(1000, Number(delayMs) || 0));
+
+  if (typeof maintenanceExpiryTimer?.unref === 'function') {
+    maintenanceExpiryTimer.unref();
+  }
+}
+
+function getMaintenanceSnapshot() {
+  const now = nowMs();
+  const active = Number(maintenanceState.untilMs) > now;
+
+  if (!active) {
+    maintenanceState.untilMs = 0;
+    maintenanceState.startedAt = null;
+    maintenanceState.durationKey = null;
+  }
+
+  return {
+    active,
+    mode: active ? 'maintenance' : 'normal',
+    durationKey: maintenanceState.durationKey,
+    startedAt: maintenanceState.startedAt,
+    endsAt: active ? new Date(maintenanceState.untilMs).toISOString() : null,
+    remainingMs: active ? Math.max(0, maintenanceState.untilMs - now) : 0,
+  };
+}
+
+function applyMaintenanceToStatus(statusPayload) {
+  const maintenance = getMaintenanceSnapshot();
+  if (!maintenance.active) {
+    return {
+      ...statusPayload,
+      maintenance,
+    };
+  }
+
+  return {
+    ...statusPayload,
+    status: 'maintenance',
+    maintenance: {
+      ...maintenance,
+      label: 'Maintenance Mode',
+    },
+  };
+}
+
+function parseMaintenanceDurationMs(durationKey, customMinutes) {
+  const map = {
+    '5m': 5 * 60 * 1000,
+    '15m': 15 * 60 * 1000,
+    '1h': 60 * 60 * 1000,
+    '24h': 24 * 60 * 60 * 1000,
+  };
+
+  if (durationKey in map) return map[durationKey];
+  if (durationKey !== 'custom') return 0;
+
+  const safeCustom = Number(customMinutes);
+  if (!Number.isFinite(safeCustom) || safeCustom <= 0) return 0;
+  return Math.floor(safeCustom * 60 * 1000);
 }
 
 async function fetchJson(url, timeoutMs = 6000) {
@@ -402,21 +577,44 @@ async function getLiveUptime(range = '30d') {
 }
 
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'survivalkendy-api', time: new Date().toISOString() });
+  res.json({
+    ok: true,
+    service: 'survivalkendy-api',
+    time: new Date().toISOString(),
+    maintenance: getMaintenanceSnapshot(),
+  });
+});
+
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    service: 'survivalkendy-api',
+    time: new Date().toISOString(),
+    maintenance: getMaintenanceSnapshot(),
+  });
 });
 
 app.get('/status', async (_req, res) => {
   try {
-    const status = await getLiveStatus();
+    const status = applyMaintenanceToStatus(await getLiveStatus());
     res.json({ payload: status });
   } catch (error) {
-    res.json({ payload: buildOfflineStatus(String(error?.message || error)) });
+    res.json({ payload: applyMaintenanceToStatus(buildOfflineStatus(String(error?.message || error))) });
+  }
+});
+
+app.get('/api/status', async (_req, res) => {
+  try {
+    const status = applyMaintenanceToStatus(await getLiveStatus());
+    res.json({ payload: status });
+  } catch (error) {
+    res.json({ payload: applyMaintenanceToStatus(buildOfflineStatus(String(error?.message || error))) });
   }
 });
 
 app.get('/players', async (_req, res) => {
   try {
-    const status = await getLiveStatus();
+    const status = applyMaintenanceToStatus(await getLiveStatus());
     res.json({
       status: status.status,
       source: status.source || 'minecraft-server-util',
@@ -432,6 +630,31 @@ app.get('/players', async (_req, res) => {
       playersMax: 0,
       players: [],
       error: String(error?.message || error),
+      maintenance: getMaintenanceSnapshot(),
+    });
+  }
+});
+
+app.get('/api/players', async (_req, res) => {
+  try {
+    const status = applyMaintenanceToStatus(await getLiveStatus());
+    res.json({
+      status: status.status,
+      source: status.source || 'minecraft-server-util',
+      playersOnline: status.playersOnline,
+      playersMax: status.playersMax,
+      players: Array.isArray(status.players) ? status.players : [],
+      maintenance: status.maintenance,
+    });
+  } catch (error) {
+    res.json({
+      status: 'offline',
+      source: 'fallback',
+      playersOnline: 0,
+      playersMax: 0,
+      players: [],
+      error: String(error?.message || error),
+      maintenance: getMaintenanceSnapshot(),
     });
   }
 });
@@ -443,6 +666,54 @@ app.get('/uptime', async (req, res) => {
   } catch (error) {
     res.status(502).json({ payload: { status: 'error' } });
   }
+});
+
+app.get('/api/uptime', async (req, res) => {
+  try {
+    const data = await getLiveUptime(req.query?.range || '30d');
+    res.json({ payload: data });
+  } catch (error) {
+    res.status(502).json({ payload: { status: 'error' } });
+  }
+});
+
+app.post('/api/maintenance', (req, res) => {
+  const enabled = req.body?.enabled !== false;
+  const durationKey = String(req.body?.duration || '').trim();
+  const durationMs = parseMaintenanceDurationMs(durationKey, req.body?.customMinutes);
+
+  if (enabled && durationMs <= 0) {
+    return res.status(400).json({
+      error: 'Invalid maintenance duration. Use 5m, 15m, 1h, 24h, or custom + customMinutes.',
+    });
+  }
+
+  const apply = async () => {
+    await syncKumaMaintenance(enabled);
+
+    if (!enabled) {
+      if (maintenanceExpiryTimer) {
+        clearTimeout(maintenanceExpiryTimer);
+        maintenanceExpiryTimer = null;
+      }
+      clearMaintenanceState();
+      return res.json({ payload: getMaintenanceSnapshot() });
+    }
+
+    maintenanceState.startedAt = new Date().toISOString();
+    maintenanceState.untilMs = nowMs() + durationMs;
+    maintenanceState.durationKey = durationKey;
+    cachedStatusAt = 0;
+    scheduleMaintenanceExpiry(durationMs);
+
+    return res.json({ payload: getMaintenanceSnapshot() });
+  };
+
+  return apply().catch((error) => {
+    return res.status(502).json({
+      error: `Unable to sync maintenance state with Uptime Kuma: ${String(error?.message || error)}`,
+    });
+  });
 });
 
 app.listen(PORT, '0.0.0.0', () => {

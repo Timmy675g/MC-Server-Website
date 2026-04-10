@@ -10,6 +10,7 @@ const infoItems = [
   { to: '/events', label: 'Events' },
   { to: '/factions', label: 'Factions' },
   { to: '/rules', label: 'Rules' },
+  { to: '/login', label: 'Login' },
 ];
 
 const statusItems = [
