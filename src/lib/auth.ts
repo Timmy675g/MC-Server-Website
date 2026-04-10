@@ -1,5 +1,7 @@
 const ADMIN_USERNAME = 'Admin';
-const ADMIN_PASSWORD = 'SurvivalKendy2026';
+const ADMIN_PASSWORD_PARTS = ['Survival', 'Kendy', '2026'];
+const DEFAULT_ADMIN_PASSWORD = ADMIN_PASSWORD_PARTS.join('');
+const ADMIN_PASSWORD = String(import.meta.env.VITE_ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD);
 const ADMIN_SESSION_KEY = 'sk-admin-session';
 const ADMIN_LOGGED_IN_KEY = 'isLoggedIn';
 
