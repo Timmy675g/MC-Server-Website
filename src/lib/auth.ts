@@ -1,7 +1,5 @@
-const ADMIN_USERNAME = 'Admin';
-const ADMIN_PASSWORD_PARTS = ['Survival', 'Kendy', '2026'];
-const DEFAULT_ADMIN_PASSWORD = ADMIN_PASSWORD_PARTS.join('');
-const ADMIN_PASSWORD = String(import.meta.env.VITE_ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD);
+import { apiUrl } from './api-base';
+
 const ADMIN_SESSION_KEY = 'sk-admin-session';
 const ADMIN_LOGGED_IN_KEY = 'isLoggedIn';
 
@@ -26,23 +24,38 @@ export interface AuthProvider {
   getSession(): AdminSession | null;
 }
 
-class HardcodedAuthProvider implements AuthProvider {
+class ApiAuthProvider implements AuthProvider {
   async login(input: LoginInput): Promise<LoginResult> {
     const username = String(input.username || '').trim();
     const password = String(input.password || '').trim();
 
-    if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
-      return { ok: false, message: 'Invalid credentials.' };
+    try {
+      const response = await fetch(apiUrl('/api/auth/login'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; username?: string } | null;
+
+      if (!response.ok || !payload?.ok) {
+        return { ok: false, message: payload?.message || 'Invalid credentials.' };
+      }
+
+      const session: AdminSession = {
+        username: String(payload.username || username),
+        loggedInAt: new Date().toISOString(),
+      };
+
+      localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+      localStorage.setItem(ADMIN_LOGGED_IN_KEY, 'true');
+      return { ok: true };
+    } catch {
+      return { ok: false, message: 'Unable to reach auth service.' };
     }
-
-    const session: AdminSession = {
-      username,
-      loggedInAt: new Date().toISOString(),
-    };
-
-    localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
-    localStorage.setItem(ADMIN_LOGGED_IN_KEY, 'true');
-    return { ok: true };
   }
 
   logout(): void {
@@ -67,7 +80,7 @@ class HardcodedAuthProvider implements AuthProvider {
 }
 
 // Replace this provider later with a database-backed implementation.
-const authProvider: AuthProvider = new HardcodedAuthProvider();
+const authProvider: AuthProvider = new ApiAuthProvider();
 
 export function getAuthProvider(): AuthProvider {
   return authProvider;

@@ -79,6 +79,8 @@ const KUMA_USER = envString('KUMA_USER', '');
 const KUMA_PASS = envString('KUMA_PASS', '');
 const KUMA_MONITOR_ID = envNumber('KUMA_MONITOR_ID', 1);
 const KUMA_SOCKET_TIMEOUT_MS = envNumber('KUMA_SOCKET_TIMEOUT_MS', 10_000);
+const ADMIN_USERNAME = envString('ADMIN_USERNAME', '');
+const ADMIN_SECRET = envString('ADMIN_SECRET', '');
 
 const STATUS_CACHE_TTL_MS = envNumber('STATUS_CACHE_TTL_MS', 15_000);
 const UPTIME_CACHE_TTL_MS = envNumber('UPTIME_CACHE_TTL_MS', 20_000);
@@ -675,6 +677,21 @@ app.get('/api/uptime', async (req, res) => {
   } catch (error) {
     res.status(502).json({ payload: { status: 'error' } });
   }
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const username = String(req.body?.username || '').trim();
+  const password = String(req.body?.password || '').trim();
+
+  if (!ADMIN_USERNAME || !ADMIN_SECRET) {
+    return res.status(503).json({ ok: false, message: 'Admin login is not configured on the server.' });
+  }
+
+  if (username !== ADMIN_USERNAME || password !== ADMIN_SECRET) {
+    return res.status(401).json({ ok: false, message: 'Invalid credentials.' });
+  }
+
+  return res.json({ ok: true, username: ADMIN_USERNAME });
 });
 
 app.post('/api/maintenance', (req, res) => {
