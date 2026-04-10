@@ -40,7 +40,7 @@ export default function ApplyPage() {
     return window.location.protocol === 'file:';
   }, []);
 
-  const formAction = `https://formsubmit.co/${import.meta.env.VITE_FORMSUBMIT_EMAIL}`;
+  const formAction = 'https://formsubmit.co/timothytimmy351@gmail.com';
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -141,7 +141,16 @@ export default function ApplyPage() {
         mode: 'cors',
       });
 
-      if (!response.ok) {
+      console.log('[apply] FormSubmit response:', response);
+
+      if (response.status !== 200) {
+        try {
+          const errorBody = await response.json();
+          console.error('[apply] FormSubmit error body:', errorBody);
+        } catch {
+          console.error('[apply] FormSubmit returned a non-JSON error response.');
+        }
+
         setError('Submission failed. Please try again in a moment.');
         setSubmitting(false);
         return;
