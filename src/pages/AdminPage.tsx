@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/card';
 import { apiUrl } from '../lib/api-base';
-import { unwrapPayload } from '../lib/api-envelope';
 import { getAuthProvider } from '../lib/auth';
 
 type UptimePayload = {
@@ -80,42 +79,46 @@ export default function AdminPage() {
   useEffect(() => {
     let mounted = true;
 
-    fetch(apiUrl('/api/uptime?range=1d'), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Failed uptime request: ${response.status}`);
-        return response.json() as Promise<UptimePayload | { payload?: UptimePayload }>;
-      })
-      .then((raw) => {
-        if (!mounted) return;
-        const payload = unwrapPayload<UptimePayload>(raw, {
-          generatedAt: new Date().toISOString(),
-          timezone: 'Asia/Jakarta',
-          stats: {
-            uptimePercent: null,
-            incidentMinutes: null,
-            incidentFreeStreakMinutes: null,
-          },
-          current: {
-            status: 'unknown',
-            label: 'Unknown',
-          },
+    const pullUptime = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/uptime?range=1d'), {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
         });
 
-        setUptime(payload);
-        setUptimeError(null);
-      })
-      .catch(() => {
+        if (!response.ok) throw new Error(`Failed uptime request: ${response.status}`);
+
+        const raw = await response.json() as unknown;
+        const payload = (((raw as { payload?: UptimePayload } | null | undefined)?.payload)
+          ?? (raw as UptimePayload | undefined));
+
         if (!mounted) return;
+        setUptime({
+          generatedAt: payload?.generatedAt || new Date().toISOString(),
+          timezone: payload?.timezone || 'Asia/Jakarta',
+          stats: {
+            uptimePercent: payload?.stats?.uptimePercent ?? null,
+            incidentMinutes: payload?.stats?.incidentMinutes ?? null,
+            incidentFreeStreakMinutes: payload?.stats?.incidentFreeStreakMinutes ?? null,
+          },
+          current: {
+            status: payload?.current?.status || 'unknown',
+            label: payload?.current?.label || 'Unknown',
+          },
+        });
+        setUptimeError(null);
+      } catch (error) {
+        if (!mounted) return;
+        console.error('[admin] Unable to load uptime payload:', String((error as Error)?.message || error));
         setUptimeError('Failed to load uptime metrics.');
-      })
-      .finally(() => {
+      } finally {
         if (!mounted) return;
         setLoadingUptime(false);
-      });
+      }
+    };
+
+    void pullUptime();
 
     return () => {
       mounted = false;
@@ -125,23 +128,27 @@ export default function AdminPage() {
   useEffect(() => {
     let mounted = true;
 
-    fetch(apiUrl('/api/status'), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    })
-      .then((response) => {
+    const pullStatus = async () => {
+      try {
+        const response = await fetch(apiUrl('/api/status'), {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+        });
+
         if (!response.ok) throw new Error(`Failed status request: ${response.status}`);
-        return response.json() as Promise<{ payload?: { maintenance?: MaintenanceState } } | { maintenance?: MaintenanceState }>;
-      })
-      .then((raw) => {
+        const raw = await response.json() as unknown;
+        const payload = (((raw as { payload?: { maintenance?: MaintenanceState } } | null | undefined)?.payload)
+          ?? (raw as { maintenance?: MaintenanceState } | undefined));
+        const maintenancePayload = payload?.maintenance;
         if (!mounted) return;
-        const payload = unwrapPayload<{ maintenance?: MaintenanceState }>(raw, {});
-        if (payload?.maintenance) setMaintenance(payload.maintenance);
-      })
-      .catch(() => {
-        // Keep dashboard usable even if initial maintenance pull fails.
-      });
+        if (maintenancePayload) setMaintenance(maintenancePayload);
+      } catch (error) {
+        console.error('[admin] Unable to load status payload:', String((error as Error)?.message || error));
+      }
+    };
+
+    void pullStatus();
 
     return () => {
       mounted = false;
@@ -189,18 +196,20 @@ export default function AdminPage() {
         throw new Error(`Maintenance request failed: ${response.status}`);
       }
 
-      const raw = await response.json() as { payload?: MaintenanceState } | MaintenanceState;
-      const snapshot = unwrapPayload<MaintenanceState>(raw, {
+      const raw = await response.json() as unknown;
+      const snapshot = ((((raw as { payload?: MaintenanceState } | null | undefined)?.payload)
+        ?? (raw as MaintenanceState | undefined)) ?? {
         active: false,
         mode: 'normal',
         durationKey: null,
         startedAt: null,
         endsAt: null,
         remainingMs: 0,
-      });
+      }) as MaintenanceState;
 
       setMaintenance(snapshot);
-    } catch {
+    } catch (error) {
+      console.error('[admin] Unable to update maintenance state:', String((error as Error)?.message || error));
       setControlError('Unable to apply maintenance window right now.');
     } finally {
       setControlBusy(false);

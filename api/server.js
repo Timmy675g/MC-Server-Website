@@ -51,20 +51,23 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
-const allowedOrigins = envString('CORS_ORIGINS', '*')
+const allowedOrigins = envString('CORS_ORIGINS', 'https://survivalkendy.systems,https://www.survivalkendy.systems')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error('CORS blocked origin')); 
-    },
-  }),
-);
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS blocked origin'));
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 const PORT = envNumber('PORT', 3001);
 const MC_SERVER_HOST = envString('MC_SERVER_HOST', 'play.survivalkendy.systems');
