@@ -86,9 +86,7 @@ export default function ApplyPage() {
     };
   }, [showSuccess]);
 
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     const form = event.target as HTMLFormElement;
     const formData = new FormData(form);
 
@@ -96,17 +94,20 @@ export default function ApplyPage() {
 
     const honey = String(formData.get('website') || '').trim();
     if (honey) {
+      event.preventDefault();
       setError('Spam check failed. Please refresh the page and try again.');
       return;
     }
 
     if (isFileProtocol) {
+      event.preventDefault();
       setError('Please open this page through a web server (http://localhost:...) because FormSubmit does not work on file:// pages.');
       return;
     }
 
     const elapsed = nowMs() - startedAt;
     if (elapsed < APPLY_MIN_FILL_MS) {
+      event.preventDefault();
       setError('Please review your form for a few seconds before submitting.');
       return;
     }
@@ -114,6 +115,7 @@ export default function ApplyPage() {
     try {
       const lastSubmitTs = Number(localStorage.getItem(APPLY_LAST_SUBMIT_KEY) || '0');
       if (lastSubmitTs > 0 && nowMs() - lastSubmitTs < APPLY_RATE_LIMIT_MS) {
+        event.preventDefault();
         const waitSec = Math.ceil((APPLY_RATE_LIMIT_MS - (nowMs() - lastSubmitTs)) / 1000);
         setError(`Please wait ${waitSec}s before submitting another application.`);
         return;
@@ -130,37 +132,6 @@ export default function ApplyPage() {
     }
 
     setSubmitting(true);
-
-    try {
-      const response = await fetch(formAction, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          Accept: 'application/json',
-        },
-        mode: 'cors',
-      });
-
-      console.log('[apply] FormSubmit response:', response);
-
-      if (response.status !== 200) {
-        try {
-          const errorBody = await response.json();
-          console.error('[apply] FormSubmit error body:', errorBody);
-        } catch {
-          console.error('[apply] FormSubmit returned a non-JSON error response.');
-        }
-
-        setError('Submission failed. Please try again in a moment.');
-        setSubmitting(false);
-        return;
-      }
-
-      window.location.assign(nextUrl);
-    } catch {
-      setError('Network error while submitting your application. Please try again.');
-      setSubmitting(false);
-    }
   };
 
   return (
