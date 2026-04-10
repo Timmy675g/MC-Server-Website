@@ -10,7 +10,6 @@ const infoItems = [
   { to: '/events', label: 'Events' },
   { to: '/factions', label: 'Factions' },
   { to: '/rules', label: 'Rules' },
-  { to: '/login', label: 'Login' },
 ];
 
 const statusItems = [
@@ -194,6 +193,9 @@ export function Navbar() {
                 {item.label}
               </NavLink>
             ))}
+            <NavLink to="/login" className={({ isActive }) => (isActive ? 'active' : '')}>
+              Login
+            </NavLink>
           </div>
         </div>
 

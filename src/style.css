@@ -4343,3 +4343,25 @@ body.data-saver .nav-dropdown-btn {
     transform: none !important;
     filter: none !important;
 }
+
+@media (max-width: 980px) {
+    .nav-dropdown {
+        display: block !important;
+        width: 100%;
+    }
+
+    .nav-links a.nav-collapse-target {
+        display: none !important;
+    }
+
+    .nav-dropdown .nav-dropdown-btn {
+        width: 100%;
+        text-align: left;
+    }
+
+    .nav-dropdown .nav-dropdown-menu {
+        position: static;
+        margin-top: 0.35rem;
+        width: 100%;
+    }
+}

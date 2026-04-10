@@ -8,8 +8,6 @@ const APPLY_SUBMIT_FLAG = 'sk_apply_submitted';
 const APPLY_LAST_SUBMIT_KEY = 'sk_apply_last_submit_ms';
 const APPLY_RATE_LIMIT_MS = 90 * 1000;
 const APPLY_MIN_FILL_MS = 4000;
-const FORMSUBMIT_HARDCODED_FALLBACK = 'https://formsubmit.co/timothytimmy351@gmail.com';
-
 function nowMs(): number {
   return Date.now();
 }
@@ -42,15 +40,7 @@ export default function ApplyPage() {
     return window.location.protocol === 'file:';
   }, []);
 
-  const formAction = useMemo(() => {
-    const endpoint = String(import.meta.env.VITE_FORMSUBMIT_ENDPOINT || '').trim();
-    if (/^https:\/\/formsubmit\.co\//i.test(endpoint)) return endpoint;
-
-    const email = String(import.meta.env.VITE_FORMSUBMIT_EMAIL || '').trim();
-    if (email) return `https://formsubmit.co/${encodeURIComponent(email)}`;
-
-    return FORMSUBMIT_HARDCODED_FALLBACK;
-  }, []);
+  const formAction = `https://formsubmit.co/${import.meta.env.VITE_FORMSUBMIT_EMAIL}`;
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -96,28 +86,27 @@ export default function ApplyPage() {
     };
   }, [showSuccess]);
 
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
-    const form = event.currentTarget;
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const form = event.target as HTMLFormElement;
     const formData = new FormData(form);
 
     setError('');
 
     const honey = String(formData.get('website') || '').trim();
     if (honey) {
-      event.preventDefault();
       setError('Spam check failed. Please refresh the page and try again.');
       return;
     }
 
     if (isFileProtocol) {
-      event.preventDefault();
       setError('Please open this page through a web server (http://localhost:...) because FormSubmit does not work on file:// pages.');
       return;
     }
 
     const elapsed = nowMs() - startedAt;
     if (elapsed < APPLY_MIN_FILL_MS) {
-      event.preventDefault();
       setError('Please review your form for a few seconds before submitting.');
       return;
     }
@@ -125,7 +114,6 @@ export default function ApplyPage() {
     try {
       const lastSubmitTs = Number(localStorage.getItem(APPLY_LAST_SUBMIT_KEY) || '0');
       if (lastSubmitTs > 0 && nowMs() - lastSubmitTs < APPLY_RATE_LIMIT_MS) {
-        event.preventDefault();
         const waitSec = Math.ceil((APPLY_RATE_LIMIT_MS - (nowMs() - lastSubmitTs)) / 1000);
         setError(`Please wait ${waitSec}s before submitting another application.`);
         return;
@@ -142,6 +130,28 @@ export default function ApplyPage() {
     }
 
     setSubmitting(true);
+
+    try {
+      const response = await fetch(formAction, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          Accept: 'application/json',
+        },
+        mode: 'cors',
+      });
+
+      if (!response.ok) {
+        setError('Submission failed. Please try again in a moment.');
+        setSubmitting(false);
+        return;
+      }
+
+      window.location.assign(nextUrl);
+    } catch {
+      setError('Network error while submitting your application. Please try again.');
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -168,6 +178,7 @@ export default function ApplyPage() {
         <input type="hidden" name="_subject" value="SurvivalKendy - New Whitelist Application" />
         <input type="hidden" name="_template" value="table" />
         <input type="hidden" name="_captcha" value="false" />
+        <input type="hidden" name="_url" value="https://survivalkendy.systems" />
         <input type="hidden" name="_next" id="apply-next-url" value={nextUrl} />
         <input type="hidden" name="apply_started_at" id="apply-started-at" value={String(startedAt)} />
         <input
