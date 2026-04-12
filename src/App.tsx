@@ -7,8 +7,8 @@ import { prefetchApiInBackground, warmHomeCritical } from './lib/api';
 import { assetUrl } from './lib/asset-url';
 import { NEWS_ITEMS } from './lib/content';
 import { isAdminAuthenticated } from './lib/auth';
+import HomePage from './pages/HomePage';
 
-const HomePage = lazy(() => import('./pages/HomePage'));
 const GuidePage = lazy(() => import('./pages/GuidePage'));
 const ApplyPage = lazy(() => import('./pages/ApplyPage'));
 const NewsPage = lazy(() => import('./pages/NewsPage'));
@@ -24,23 +24,26 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 
 const MIN_BOOT_MS = 260;
-const ROUTE_FALLBACK_PROGRESS = 96;
-type BootChecks = {
-  api: boolean;
-  chunks: boolean;
-  assets: boolean;
-  paint: boolean;
-};
-
-const INITIAL_BOOT_CHECKS: BootChecks = {
-  api: false,
-  chunks: false,
-  assets: false,
-  paint: false,
-};
+// Ping-pong uses alternate direction, so one full left->right->left cycle is 2x duration.
+const PING_PONG_FULL_CYCLE_MS = 2800;
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function withTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const id = window.setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
+    task
+      .then((value) => {
+        window.clearTimeout(id);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(id);
+        reject(error);
+      });
+  });
 }
 
 function waitForNextPaint() {
@@ -173,7 +176,6 @@ function prefetchRoutes() {
 function App() {
   const [booting, setBooting] = useState(true);
   const [bootProgress, setBootProgress] = useState(8);
-  const [checks, setChecks] = useState<BootChecks>(INITIAL_BOOT_CHECKS);
 
   const location = useLocation();
 
@@ -210,23 +212,24 @@ function App() {
     let mounted = true;
     const constrainedDevice = isMobileConstrainedDevice();
 
-    const updateProgress = (next: BootChecks) => {
+    const updateProgress = (doneCount: number, total = 4) => {
       if (!mounted) return;
-      const doneCount = Object.values(next).filter(Boolean).length;
-      const total = Object.keys(next).length;
       const pct = 8 + Math.round((doneCount / total) * 92);
-      setChecks(next);
       setBootProgress(pct);
     };
 
     const runBoot = async () => {
+      const bootStartedAt = performance.now();
+
+      // Block initial boot on truly critical dependencies so we do not show a blank
+      // page after loader dismissal on slower networks.
       await Promise.allSettled([
-        warmHomeCritical(),
+        withTimeout(warmHomeCritical(), constrainedDevice ? 5200 : 3600),
         delay(constrainedDevice ? 140 : MIN_BOOT_MS),
       ]);
-      updateProgress({ api: true, chunks: false, assets: false, paint: false });
+      updateProgress(1);
 
-      // Keep LCP path lean: defer heavy route/asset preloads to idle time.
+      // Keep non-critical work deferred to idle after critical readiness.
       scheduleIdleTask(() => {
         void preloadRoutes();
       }, constrainedDevice ? 2200 : 1200);
@@ -235,10 +238,15 @@ function App() {
         void preloadCriticalAssets();
       }, constrainedDevice ? 3200 : 1800);
 
-      updateProgress({ api: true, chunks: true, assets: true, paint: false });
+      updateProgress(3);
 
       await waitForNextPaint();
-      updateProgress({ api: true, chunks: true, assets: true, paint: true });
+      updateProgress(4);
+
+      const elapsedMs = performance.now() - bootStartedAt;
+      if (elapsedMs < PING_PONG_FULL_CYCLE_MS) {
+        await delay(PING_PONG_FULL_CYCLE_MS - elapsedMs);
+      }
 
       if (!mounted) return;
       setBootProgress(100);
@@ -260,15 +268,8 @@ function App() {
     };
   }, []);
 
-  const bootChecks = [
-    { label: 'Warm status API', done: checks.api },
-    { label: 'Prepare page chunks', done: checks.chunks },
-    { label: 'Load visual assets', done: checks.assets },
-    { label: 'Finalize first paint', done: checks.paint },
-  ];
-
   if (booting) {
-    return <LoadingScreen progress={bootProgress} checks={bootChecks} />;
+    return <LoadingScreen progress={bootProgress} />;
   }
 
   const requireAdmin = (element: ReactElement) => (
@@ -276,21 +277,7 @@ function App() {
   );
 
   return (
-    <Suspense
-      fallback={
-        <LoadingScreen
-          title="Loading page"
-          subtitle="Preparing route chunk and fresh content..."
-          progress={ROUTE_FALLBACK_PROGRESS}
-          checks={[
-            { label: 'Warm status API', done: true },
-            { label: 'Prepare page chunks', done: true },
-            { label: 'Load visual assets', done: true },
-            { label: 'Finalize first paint', done: false },
-          ]}
-        />
-      }
-    >
+    <Suspense fallback={null}>
       <Routes>
         <Route element={<SiteLayout />}>
           <Route path="/" element={<HomePage />} />

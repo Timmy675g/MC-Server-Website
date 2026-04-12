@@ -18,7 +18,7 @@ const statusItems = [
   { to: '/uptime', label: 'Uptime' },
 ];
 
-const mobileCollapsedItems = [...infoItems, ...statusItems];
+const mobileCollapsedItems = [...infoItems, { to: '/login', label: 'Login' }, ...statusItems];
 
 export function Navbar() {
   const [open, setOpen] = useState(false);

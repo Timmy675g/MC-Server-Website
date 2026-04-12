@@ -9,8 +9,14 @@ const NEWS_ROTATE_MS = 6200;
 
 function statusTone(status: string): string {
   if (status === 'online') return 'status-online';
-  if (status === 'degraded') return 'status-pinging';
+  if (status === 'maintenance' || status === 'degraded') return 'status-pinging';
   return 'status-offline';
+}
+
+function statusLabel(status: string): 'Operational' | 'Maintenance' | 'Down' {
+  if (status === 'online') return 'Operational';
+  if (status === 'maintenance' || status === 'degraded') return 'Maintenance';
+  return 'Down';
 }
 
 export default function HomePage() {
@@ -192,7 +198,7 @@ export default function HomePage() {
   }, []);
 
   const cards = useMemo(() => {
-    const liveStatus = status?.status === 'online' ? 'Operational' : 'Down';
+    const liveStatus = statusLabel(status?.status ?? 'offline');
     return [
       {
         label: 'Status',
@@ -306,18 +312,12 @@ export default function HomePage() {
       </section>
 
       <header className="hero container reveal in-view" id="home-content">
-        <article className="card opening-timer-card">
-          <p className="eyebrow">New Milestone!</p>
-          <h2>The Server has reached the first Milestone of 50 Registered Players!</h2>
-          <h4 className="opening-milestone-note">It is unbelieveable how the server can grow this fast!</h4>
-          {error ? <p>{error}</p> : null}
-        </article>
-
         <div className="hero-grid">
           <div>
             <p className="eyebrow">Made by DNDGroup</p>
             <h1 data-typing-list="SurvivalKendy Minecraft Server|War or Peace Situations|Creativity, Strategy, Community.">{typingValue}</h1>
             <p className="subtitle">&quot;A server where creativity and strategy matter&quot;</p>
+            {error ? <p className="meta">{error}</p> : null}
             <div className="button-group">
               <Link to="/join" className="btn btn-primary">JOIN NOW</Link>
               <Link to="/news" className="btn btn-secondary">READ THE NEWS</Link>
