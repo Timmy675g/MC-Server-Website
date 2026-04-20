@@ -175,7 +175,6 @@ function prefetchRoutes() {
 
 function App() {
   const [booting, setBooting] = useState(true);
-  const [bootProgress, setBootProgress] = useState(8);
 
   const location = useLocation();
 
@@ -212,12 +211,6 @@ function App() {
     let mounted = true;
     const constrainedDevice = isMobileConstrainedDevice();
 
-    const updateProgress = (doneCount: number, total = 4) => {
-      if (!mounted) return;
-      const pct = 8 + Math.round((doneCount / total) * 92);
-      setBootProgress(pct);
-    };
-
     const runBoot = async () => {
       const bootStartedAt = performance.now();
 
@@ -227,7 +220,6 @@ function App() {
         withTimeout(warmHomeCritical(), constrainedDevice ? 5200 : 3600),
         delay(constrainedDevice ? 140 : MIN_BOOT_MS),
       ]);
-      updateProgress(1);
 
       // Keep non-critical work deferred to idle after critical readiness.
       scheduleIdleTask(() => {
@@ -238,10 +230,7 @@ function App() {
         void preloadCriticalAssets();
       }, constrainedDevice ? 3200 : 1800);
 
-      updateProgress(3);
-
       await waitForNextPaint();
-      updateProgress(4);
 
       const elapsedMs = performance.now() - bootStartedAt;
       if (elapsedMs < PING_PONG_FULL_CYCLE_MS) {
@@ -249,7 +238,6 @@ function App() {
       }
 
       if (!mounted) return;
-      setBootProgress(100);
       setBooting(false);
 
       scheduleIdleTask(() => {
@@ -269,7 +257,7 @@ function App() {
   }, []);
 
   if (booting) {
-    return <LoadingScreen progress={bootProgress} />;
+    return <LoadingScreen />;
   }
 
   const requireAdmin = (element: ReactElement) => (

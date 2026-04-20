@@ -3,7 +3,6 @@ import { assetUrl } from '../lib/asset-url';
 import { Card } from './ui/card';
 
 type LoadingScreenProps = {
-  progress?: number;
   title?: string;
   subtitle?: string;
 };
@@ -11,7 +10,6 @@ type LoadingScreenProps = {
 export function LoadingScreen({
   title = 'Loading SurvivalKendy',
   subtitle = 'Preparing content and warming API data...',
-  progress: _progress,
 }: LoadingScreenProps) {
   const [insightIndex, setInsightIndex] = useState(0);
   const insights = [

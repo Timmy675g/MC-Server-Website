@@ -113,8 +113,9 @@ export default function AdminPage() {
         console.error('[admin] Unable to load uptime payload:', String((error as Error)?.message || error));
         setUptimeError('Failed to load uptime metrics.');
       } finally {
-        if (!mounted) return;
-        setLoadingUptime(false);
+        if (mounted) {
+          setLoadingUptime(false);
+        }
       }
     };
 
