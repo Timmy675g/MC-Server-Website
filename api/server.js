@@ -3,6 +3,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { io } from 'socket.io-client';
 import { status as statusJava, statusBedrock } from 'minecraft-server-util';
+import mysql from 'mysql2/promise';
 import 'dotenv/config';
 
 const app = express();
@@ -63,6 +64,7 @@ const corsOptions = {
     return callback(new Error('CORS blocked origin'));
   },
   methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Accept', 'Admin-Secret'],
   credentials: true,
 };
 
@@ -84,6 +86,13 @@ const KUMA_MONITOR_ID = envNumber('KUMA_MONITOR_ID', 1);
 const KUMA_SOCKET_TIMEOUT_MS = envNumber('KUMA_SOCKET_TIMEOUT_MS', 10_000);
 const ADMIN_USERNAME = envString('ADMIN_USERNAME', '');
 const ADMIN_SECRET = envString('ADMIN_SECRET', '');
+const MYSQL_HOST = envString('MYSQL_HOST', '');
+const MYSQL_PORT = envNumber('MYSQL_PORT', 3306);
+const MYSQL_USER = envString('MYSQL_USER', '');
+const MYSQL_PASSWORD = envString('MYSQL_PASSWORD', '');
+const MYSQL_DATABASE = envString('MYSQL_DATABASE', 'survivalkendy_db');
+const APPLICATIONS_TABLE = envString('APPLICATIONS_TABLE', 'applications');
+const AUTO_WAITLIST_INTERVAL_MS = envNumber('AUTO_WAITLIST_INTERVAL_MS', 60_000);
 
 const STATUS_CACHE_TTL_MS = envNumber('STATUS_CACHE_TTL_MS', 15_000);
 const UPTIME_CACHE_TTL_MS = envNumber('UPTIME_CACHE_TTL_MS', 20_000);
@@ -92,6 +101,9 @@ let cachedStatus = null;
 let cachedStatusAt = 0;
 let cachedUptime = null;
 let cachedUptimeAt = 0;
+let applicationsPool = null;
+let applicationsSchemaReady = false;
+let autoWaitlistTimer = null;
 const maintenanceState = {
   untilMs: 0,
   startedAt: null,
@@ -264,6 +276,118 @@ function parseMaintenanceDurationMs(durationKey, customMinutes) {
   const safeCustom = Number(customMinutes);
   if (!Number.isFinite(safeCustom) || safeCustom <= 0) return 0;
   return Math.floor(safeCustom * 60 * 1000);
+}
+
+function isSafeIdentifier(value) {
+  return /^[A-Za-z0-9_]+$/.test(String(value || ''));
+}
+
+function getApplicationsTableName() {
+  return isSafeIdentifier(APPLICATIONS_TABLE) ? APPLICATIONS_TABLE : 'applications';
+}
+
+function hasMySqlConfig() {
+  return Boolean(MYSQL_HOST && MYSQL_USER && MYSQL_DATABASE);
+}
+
+function getApplicationsPool() {
+  if (!hasMySqlConfig()) {
+    throw new Error('MySQL is not configured. Set MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, and MYSQL_DATABASE.');
+  }
+
+  if (applicationsPool) return applicationsPool;
+
+  applicationsPool = mysql.createPool({
+    host: MYSQL_HOST,
+    port: MYSQL_PORT,
+    user: MYSQL_USER,
+    password: MYSQL_PASSWORD,
+    database: MYSQL_DATABASE,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10_000,
+  });
+
+  return applicationsPool;
+}
+
+async function ensureApplicationsSchema() {
+  if (applicationsSchemaReady) return;
+
+  const table = getApplicationsTableName();
+  const pool = getApplicationsPool();
+  const createSql = `
+    CREATE TABLE IF NOT EXISTS \`${table}\` (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+      username VARCHAR(255) NOT NULL,
+      discord_tag VARCHAR(100) NOT NULL,
+      grade VARCHAR(50) NOT NULL DEFAULT '',
+      school VARCHAR(255) NOT NULL DEFAULT '',
+      invited_by VARCHAR(255) NOT NULL DEFAULT '',
+      reason TEXT NOT NULL,
+      agreement_confirmed TINYINT(1) NOT NULL DEFAULT 0,
+      status VARCHAR(32) NOT NULL DEFAULT 'Pending',
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      INDEX idx_applications_username_created_at (username, created_at),
+      INDEX idx_applications_status_created_at (status, created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `;
+
+  await pool.execute(createSql);
+  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS grade VARCHAR(50) NOT NULL DEFAULT ''`);
+  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS school VARCHAR(255) NOT NULL DEFAULT ''`);
+  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS invited_by VARCHAR(255) NOT NULL DEFAULT ''`);
+  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS agreement_confirmed TINYINT(1) NOT NULL DEFAULT 0`);
+  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'Pending'`);
+  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`);
+
+  applicationsSchemaReady = true;
+}
+
+async function autoWaitlist() {
+  await ensureApplicationsSchema();
+
+  const table = getApplicationsTableName();
+  const pool = getApplicationsPool();
+  const sql = `
+    UPDATE \`${table}\`
+    SET status = 'Waitlist'
+    WHERE status = 'Pending'
+      AND created_at < (NOW() - INTERVAL 1 HOUR)
+  `;
+
+  const [result] = await pool.execute(sql);
+  return Number(result?.affectedRows || 0);
+}
+
+function scheduleAutoWaitlist() {
+  if (!hasMySqlConfig()) {
+    console.log('[api] Application DB not configured, skipping autoWaitlist scheduler.');
+    return;
+  }
+
+  const tick = async () => {
+    try {
+      const changed = await autoWaitlist();
+      if (changed > 0) {
+        console.log(`[api] autoWaitlist moved ${changed} applications to Waitlist.`);
+      }
+    } catch (error) {
+      console.error('[api] autoWaitlist failed:', String(error?.message || error));
+    }
+  };
+
+  void tick();
+  autoWaitlistTimer = setInterval(() => {
+    void tick();
+  }, Math.max(10_000, AUTO_WAITLIST_INTERVAL_MS));
+
+  if (typeof autoWaitlistTimer?.unref === 'function') {
+    autoWaitlistTimer.unref();
+  }
 }
 
 async function fetchJson(url, timeoutMs = 6000) {
@@ -697,6 +821,216 @@ app.post('/api/auth/login', (req, res) => {
   return res.json({ ok: true, username: ADMIN_USERNAME });
 });
 
+async function submitApplication(req, res) {
+  const username = String(req.body?.username || '').trim();
+  const discordTag = String(req.body?.discord_tag || '').trim();
+  const grade = String(req.body?.grade || '').trim();
+  const school = String(req.body?.school || '').trim();
+  const invitedBy = String(req.body?.invited_by || '').trim();
+  const reason = String(req.body?.reason || '').trim();
+  const agreementConfirmed = req.body?.agreement_confirmed === true;
+
+  if (!username || !discordTag || !grade || !school || !invitedBy || !reason) {
+    return res.status(400).json({
+      error: 'username, discord_tag, grade, school, invited_by, and reason are required.',
+    });
+  }
+
+  if (!agreementConfirmed) {
+    return res.status(400).json({
+      error: 'agreement_confirmed must be true to submit an application.',
+    });
+  }
+
+  if (
+    username.length > 255
+    || discordTag.length > 100
+    || grade.length > 50
+    || school.length > 255
+    || invitedBy.length > 255
+  ) {
+    return res.status(400).json({ error: 'One or more fields are too long.' });
+  }
+
+  try {
+    await ensureApplicationsSchema();
+
+    const table = getApplicationsTableName();
+    const pool = getApplicationsPool();
+    const sql = `
+      INSERT INTO \`${table}\` (username, discord_tag, grade, school, invited_by, reason, agreement_confirmed)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    const [result] = await pool.execute(sql, [
+      username,
+      discordTag,
+      grade,
+      school,
+      invitedBy,
+      reason,
+      agreementConfirmed ? 1 : 0,
+    ]);
+
+    return res.status(201).json({
+      ok: true,
+      id: Number(result?.insertId || 0),
+      status: 'Pending',
+      message: 'Application submitted successfully.',
+    });
+  } catch (error) {
+    return res.status(503).json({ error: String(error?.message || error) });
+  }
+}
+
+async function getApplicationStatus(req, res) {
+  const username = String(req.params?.username || '').trim();
+  if (!username) {
+    return res.status(400).json({ error: 'username is required in path.' });
+  }
+
+  try {
+    await ensureApplicationsSchema();
+    await autoWaitlist();
+
+    const table = getApplicationsTableName();
+    const pool = getApplicationsPool();
+    const sql = `
+      SELECT username, discord_tag, status, created_at
+      FROM \`${table}\`
+      WHERE username = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+
+    const [rows] = await pool.execute(sql, [username]);
+    const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+
+    if (!row) {
+      return res.status(404).json({ error: 'Application not found.' });
+    }
+
+    return res.json({
+      ok: true,
+      username: row.username,
+      discord_tag: row.discord_tag,
+      status: row.status,
+      created_at: row.created_at,
+    });
+  } catch (error) {
+    return res.status(503).json({ error: String(error?.message || error) });
+  }
+}
+
+function requireAdminSecret(req, res, next) {
+  if (!ADMIN_SECRET) {
+    return res.status(503).json({ error: 'Admin secret is not configured on the server.' });
+  }
+
+  const headerSecret = String(req.headers['admin-secret'] || '').trim();
+  if (!headerSecret || headerSecret !== ADMIN_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized admin request.' });
+  }
+
+  return next();
+}
+
+async function listAdminApplications(_req, res) {
+  try {
+    await ensureApplicationsSchema();
+    await autoWaitlist();
+
+    const table = getApplicationsTableName();
+    const pool = getApplicationsPool();
+    const sql = `
+      SELECT id, username, discord_tag, status, created_at
+      FROM \`${table}\`
+      ORDER BY created_at DESC
+      LIMIT 500
+    `;
+
+    const [rows] = await pool.execute(sql);
+    const applications = Array.isArray(rows) ? rows.map((row) => ({
+      id: Number(row.id || 0),
+      username: String(row.username || ''),
+      discord_tag: String(row.discord_tag || ''),
+      status: String(row.status || 'Pending'),
+      created_at: row.created_at || null,
+    })) : [];
+
+    return res.json({ ok: true, applications });
+  } catch (error) {
+    return res.status(503).json({ error: String(error?.message || error) });
+  }
+}
+
+async function updateAdminApplicationStatus(req, res) {
+  const id = Number(req.body?.id);
+  const status = String(req.body?.status || '').trim();
+  const allowed = new Set(['Accepted', 'Declined', 'Waitlist']);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'id must be a positive integer.' });
+  }
+
+  if (!allowed.has(status)) {
+    return res.status(400).json({ error: 'status must be one of: Accepted, Declined, Waitlist.' });
+  }
+
+  try {
+    await ensureApplicationsSchema();
+
+    const table = getApplicationsTableName();
+    const pool = getApplicationsPool();
+    const updateSql = `
+      UPDATE \`${table}\`
+      SET status = ?
+      WHERE id = ?
+      LIMIT 1
+    `;
+
+    const [result] = await pool.execute(updateSql, [status, id]);
+    if (!Number(result?.affectedRows || 0)) {
+      return res.status(404).json({ error: 'Application not found.' });
+    }
+
+    const fetchSql = `
+      SELECT id, username, discord_tag, status, created_at
+      FROM \`${table}\`
+      WHERE id = ?
+      LIMIT 1
+    `;
+
+    const [rows] = await pool.execute(fetchSql, [id]);
+    const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    if (!row) {
+      return res.status(404).json({ error: 'Application not found after update.' });
+    }
+
+    return res.json({
+      ok: true,
+      application: {
+        id: Number(row.id || 0),
+        username: String(row.username || ''),
+        discord_tag: String(row.discord_tag || ''),
+        status: String(row.status || 'Pending'),
+        created_at: row.created_at || null,
+      },
+    });
+  } catch (error) {
+    return res.status(503).json({ error: String(error?.message || error) });
+  }
+}
+
+app.post('/apply', submitApplication);
+app.post('/api/apply', submitApplication);
+app.get('/status/:username', getApplicationStatus);
+app.get('/api/status/:username', getApplicationStatus);
+app.get('/admin/applications', requireAdminSecret, listAdminApplications);
+app.get('/api/admin/applications', requireAdminSecret, listAdminApplications);
+app.post('/admin/update-status', requireAdminSecret, updateAdminApplicationStatus);
+app.post('/api/admin/update-status', requireAdminSecret, updateAdminApplicationStatus);
+
 app.post('/api/maintenance', (req, res) => {
   const enabled = req.body?.enabled !== false;
   const durationKey = String(req.body?.duration || '').trim();
@@ -743,4 +1077,6 @@ app.listen(PORT, '0.0.0.0', () => {
   } else {
     console.log('[api] UPTIME_KUMA_STATUS_PAGE_URL is missing or empty');
   }
+
+  scheduleAutoWaitlist();
 });

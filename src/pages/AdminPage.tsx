@@ -27,6 +27,14 @@ type MaintenanceState = {
   remainingMs?: number;
 };
 
+type AdminApplication = {
+  id: number;
+  username: string;
+  discord_tag: string;
+  status: string;
+  created_at?: string | null;
+};
+
 const DURATION_OPTIONS = [
   { key: '5m', label: '5 minutes' },
   { key: '15m', label: '15 minutes' },
@@ -73,6 +81,11 @@ export default function AdminPage() {
   const [controlBusy, setControlBusy] = useState(false);
   const [controlError, setControlError] = useState<string | null>(null);
   const [maintenance, setMaintenance] = useState<MaintenanceState | null>(null);
+  const [adminSecret, setAdminSecret] = useState('');
+  const [applications, setApplications] = useState<AdminApplication[]>([]);
+  const [loadingApplications, setLoadingApplications] = useState(false);
+  const [applicationsError, setApplicationsError] = useState<string | null>(null);
+  const [rowBusy, setRowBusy] = useState<Record<number, boolean>>({});
 
   const isMaintenanceActive = Boolean(maintenance?.active);
 
@@ -165,6 +178,95 @@ export default function AdminPage() {
       updatedAt: formatDateTime(uptime?.generatedAt || null, uptime?.timezone),
     };
   }, [uptime]);
+
+  const loadApplications = async () => {
+    if (!adminSecret.trim()) {
+      setApplicationsError('Enter Admin Secret to load applications.');
+      return;
+    }
+
+    setLoadingApplications(true);
+    setApplicationsError(null);
+
+    try {
+      const response = await fetch(apiUrl('/admin/applications'), {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          'Admin-Secret': adminSecret.trim(),
+        },
+      });
+
+      const payload = await response.json().catch(() => null) as {
+        applications?: AdminApplication[];
+        error?: string;
+      } | null;
+
+      if (!response.ok) {
+        throw new Error(String(payload?.error || `Failed to load applications: ${response.status}`));
+      }
+
+      setApplications(Array.isArray(payload?.applications) ? payload.applications : []);
+    } catch (error) {
+      setApplicationsError(String((error as Error)?.message || error));
+    } finally {
+      setLoadingApplications(false);
+    }
+  };
+
+  const updateApplicationStatus = async (id: number, status: 'Accepted' | 'Declined' | 'Waitlist') => {
+    if (!adminSecret.trim()) {
+      setApplicationsError('Enter Admin Secret before updating status.');
+      return;
+    }
+
+    setApplicationsError(null);
+    setRowBusy((prev) => ({ ...prev, [id]: true }));
+
+    try {
+      const response = await fetch(apiUrl('/admin/update-status'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'Admin-Secret': adminSecret.trim(),
+        },
+        body: JSON.stringify({ id, status }),
+      });
+
+      const payload = await response.json().catch(() => null) as {
+        application?: AdminApplication;
+        error?: string;
+      } | null;
+
+      if (!response.ok || !payload?.application) {
+        throw new Error(String(payload?.error || `Failed to update status: ${response.status}`));
+      }
+
+      setApplications((prev) => prev.map((item) => {
+        if (item.id !== id) return item;
+        return payload.application as AdminApplication;
+      }));
+    } catch (error) {
+      setApplicationsError(String((error as Error)?.message || error));
+    } finally {
+      setRowBusy((prev) => ({ ...prev, [id]: false }));
+    }
+  };
+
+  const getRowStyle = (status: string): React.CSSProperties => {
+    const normalized = String(status || '').toLowerCase();
+    if (normalized === 'accepted') {
+      return { background: 'rgba(22, 163, 74, 0.14)' };
+    }
+    if (normalized === 'waitlist') {
+      return { background: 'rgba(250, 204, 21, 0.16)' };
+    }
+    if (normalized === 'declined') {
+      return { background: 'rgba(220, 38, 38, 0.14)' };
+    }
+    return {};
+  };
 
   const onSubmitMaintenance = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -310,6 +412,102 @@ export default function AdminPage() {
             <p>Ends at: <strong>{formatDateTime(maintenance.endsAt ?? null, uptime?.timezone)}</strong></p>
           </div>
         ) : null}
+      </Card>
+
+      <Card className="card" style={{ gridColumn: '1 / -1' }}>
+        <h3>Applications</h3>
+        <p className="meta" style={{ marginTop: '0.35rem' }}>
+          Use your Admin Secret to load and manage whitelist applications.
+        </p>
+
+        <div className="stack" style={{ marginTop: '0.9rem' }}>
+          <label htmlFor="admin-secret-input">Admin Secret</label>
+          <input
+            id="admin-secret-input"
+            type="password"
+            value={adminSecret}
+            onChange={(event) => setAdminSecret(event.target.value)}
+            className="input"
+            placeholder="Enter ADMIN_SECRET"
+            autoComplete="off"
+          />
+          <div className="button-group">
+            <button type="button" className="btn btn-primary" onClick={() => {
+              void loadApplications();
+            }} disabled={loadingApplications}>
+              {loadingApplications ? 'Loading...' : 'Load Applications'}
+            </button>
+          </div>
+        </div>
+
+        {applicationsError ? <p style={{ marginTop: '0.8rem', color: 'var(--danger)' }}>{applicationsError}</p> : null}
+
+        <div style={{ marginTop: '1rem', overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>ID</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Username</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Discord</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Status</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {applications.length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: '0.8rem', color: 'var(--muted)' }}>
+                    No applications loaded.
+                  </td>
+                </tr>
+              ) : applications.map((item) => {
+                const busy = Boolean(rowBusy[item.id]);
+                return (
+                  <tr key={item.id} style={getRowStyle(item.status)}>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.id}</td>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.username}</td>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.discord_tag}</td>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.status}</td>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>
+                      <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          onClick={() => {
+                            void updateApplicationStatus(item.id, 'Accepted');
+                          }}
+                          disabled={busy}
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          onClick={() => {
+                            void updateApplicationStatus(item.id, 'Declined');
+                          }}
+                          disabled={busy}
+                        >
+                          Decline
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => {
+                            void updateApplicationStatus(item.id, 'Waitlist');
+                          }}
+                          disabled={busy}
+                        >
+                          Waitlist
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </main>
   );

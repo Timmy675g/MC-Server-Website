@@ -8,6 +8,10 @@ Minimal backend service for frontend data endpoints.
 - `GET /status`
 - `GET /players`
 - `GET /uptime?range=30d|90d|1d`
+- `POST /apply`
+- `GET /status/:username`
+- `GET /admin/applications` (requires `Admin-Secret` header)
+- `POST /admin/update-status` (requires `Admin-Secret` header)
 
 ## Run locally
 
@@ -35,3 +39,12 @@ API will run on `http://0.0.0.0:3001` by default.
 - `UPTIME_KUMA_STATUS_PAGE_URL`
 - `UPTIME_KUMA_MONITOR_MINECRAFT`
 - `UPTIME_KUMA_MONITOR_VM`
+- `MYSQL_HOST`
+- `MYSQL_PORT`
+- `MYSQL_USER`
+- `MYSQL_PASSWORD`
+- `MYSQL_DATABASE`
+- `APPLICATIONS_TABLE`
+- `AUTO_WAITLIST_INTERVAL_MS`
+- `ADMIN_USERNAME`
+- `ADMIN_SECRET`

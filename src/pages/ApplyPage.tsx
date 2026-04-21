@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
+import { apiUrl } from '../lib/api-base';
 
 const APPLY_SUBMIT_FLAG = 'sk_apply_submitted';
 const APPLY_LAST_SUBMIT_KEY = 'sk_apply_last_submit_ms';
@@ -30,17 +31,10 @@ export default function ApplyPage() {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  const nextUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '';
-    return `${window.location.origin}${window.location.pathname}?applied=1`;
-  }, []);
-
-  const isFileProtocol = useMemo(() => {
+  const isFileProtocol = (() => {
     if (typeof window === 'undefined') return false;
     return window.location.protocol === 'file:';
-  }, []);
-
-  const formAction = 'https://formsubmit.co/timothytimmy351@gmail.com';
+  })();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -86,7 +80,9 @@ export default function ApplyPage() {
     };
   }, [showSuccess]);
 
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
     const form = event.target as HTMLFormElement;
     const formData = new FormData(form);
 
@@ -94,20 +90,17 @@ export default function ApplyPage() {
 
     const honey = String(formData.get('website') || '').trim();
     if (honey) {
-      event.preventDefault();
       setError('Spam check failed. Please refresh the page and try again.');
       return;
     }
 
     if (isFileProtocol) {
-      event.preventDefault();
-      setError('Please open this page through a web server (http://localhost:...) because FormSubmit does not work on file:// pages.');
+      setError('Please open this page through a web server (http://localhost:...) because API requests do not work on file:// pages.');
       return;
     }
 
     const elapsed = nowMs() - startedAt;
     if (elapsed < APPLY_MIN_FILL_MS) {
-      event.preventDefault();
       setError('Please review your form for a few seconds before submitting.');
       return;
     }
@@ -115,7 +108,6 @@ export default function ApplyPage() {
     try {
       const lastSubmitTs = Number(localStorage.getItem(APPLY_LAST_SUBMIT_KEY) || '0');
       if (lastSubmitTs > 0 && nowMs() - lastSubmitTs < APPLY_RATE_LIMIT_MS) {
-        event.preventDefault();
         const waitSec = Math.ceil((APPLY_RATE_LIMIT_MS - (nowMs() - lastSubmitTs)) / 1000);
         setError(`Please wait ${waitSec}s before submitting another application.`);
         return;
@@ -124,14 +116,66 @@ export default function ApplyPage() {
       // Ignore storage errors.
     }
 
-    try {
-      sessionStorage.setItem(APPLY_SUBMIT_FLAG, '1');
-      localStorage.setItem(APPLY_LAST_SUBMIT_KEY, String(nowMs()));
-    } catch {
-      // Ignore storage errors.
+    const username = String(formData.get('mc_username') || '').trim();
+    const discordTag = String(formData.get('discord_username') || '').trim();
+    const grade = String(formData.get('grade') || '').trim();
+    const school = String(formData.get('school') || '').trim();
+    const invitedBy = String(formData.get('invited_by') || '').trim();
+    const reason = String(formData.get('motivation') || '').trim();
+    const agreementConfirmed = formData.get('agreement_confirmed') === 'on';
+
+    if (!username || !discordTag || !grade || !school || !invitedBy || !reason) {
+      setError('Please fill out all required fields before submitting.');
+      return;
+    }
+
+    if (!agreementConfirmed) {
+      setError('You must accept the server rules acknowledgment to submit.');
+      return;
     }
 
     setSubmitting(true);
+
+    try {
+      const response = await fetch(apiUrl('/apply'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          username,
+          discord_tag: discordTag,
+          grade,
+          school,
+          invited_by: invitedBy,
+          reason,
+          agreement_confirmed: agreementConfirmed,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = String(payload?.error || 'Unable to submit your application right now. Please try again later.');
+        setError(message);
+        setSubmitting(false);
+        return;
+      }
+
+      try {
+        sessionStorage.setItem(APPLY_SUBMIT_FLAG, '1');
+        localStorage.setItem(APPLY_LAST_SUBMIT_KEY, String(nowMs()));
+      } catch {
+        // Ignore storage errors.
+      }
+
+      setShowSuccess(true);
+      form.reset();
+    } catch {
+      setError('Network error while submitting. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -151,15 +195,8 @@ export default function ApplyPage() {
       <form
         className="card stack"
         id="apply-form"
-        method="POST"
-        action={formAction}
         onSubmit={onSubmit}
       >
-        <input type="hidden" name="_subject" value="SurvivalKendy - New Whitelist Application" />
-        <input type="hidden" name="_template" value="table" />
-        <input type="hidden" name="_captcha" value="false" />
-        <input type="hidden" name="_url" value="https://survivalkendy.systems" />
-        <input type="hidden" name="_next" id="apply-next-url" value={nextUrl} />
         <input type="hidden" name="apply_started_at" id="apply-started-at" value={String(startedAt)} />
         <input
           type="text"
@@ -172,7 +209,7 @@ export default function ApplyPage() {
         />
 
         <label>
-          Minecraft Username (add "." in front if Bedrock, normal username if Java)
+          Minecraft Username
           <Input className="field" type="text" name="mc_username" placeholder=".BedrockName or JavaName" required />
         </label>
         <label>
@@ -184,7 +221,7 @@ export default function ApplyPage() {
           <Input className="field" type="text" name="school" required />
         </label>
         <label>
-          Discord Username (for contact if approved)
+          Discord Username
           <Input className="field" type="text" name="discord_username" placeholder="username or username#1234" required />
         </label>
         <label>
@@ -192,7 +229,7 @@ export default function ApplyPage() {
           <Input className="field" type="text" name="invited_by" placeholder="Friend username / who invited you" required />
         </label>
         <label>
-          Reasons why you want to join
+          Reason Why You Want To Join
           <Textarea className="field" rows={4} name="motivation" required />
         </label>
 
