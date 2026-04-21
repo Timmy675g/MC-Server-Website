@@ -6,7 +6,7 @@
   "type": "module",
   "engines": {
     "node": ">=20.19.0 <25",
-    "npm": ">=10 <12"
+    "npm": "10.9.2"
   },
   "scripts": {
     "dev": "vite",
