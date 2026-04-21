@@ -5,8 +5,8 @@
   "packageManager": "npm@10.9.2",
   "type": "module",
   "engines": {
-    "node": "22.x",
-    "npm": "10.x"
+    "node": ">=20.19.0 <25",
+    "npm": ">=10 <12"
   },
   "scripts": {
     "dev": "vite",
