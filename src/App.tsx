@@ -271,6 +271,8 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/join" element={<GuidePage />} />
           <Route path="/apply" element={<ApplyPage />} />
+          <Route path="/index" element={<Navigate to="/apply" replace />} />
+          <Route path="/index.html" element={<Navigate to="/apply" replace />} />
           <Route path="/news" element={<NewsPage />} />
           <Route path="/news/:id" element={<NewsArticlePage />} />
           <Route path="/stats" element={<StatsPage />} />

@@ -16,6 +16,11 @@ function nowMs(): number {
 export default function ApplyPage() {
   const [startedAt] = useState<number>(nowMs());
   const [error, setError] = useState<string>('');
+  const [statusError, setStatusError] = useState<string>('');
+  const [statusLookupUsername, setStatusLookupUsername] = useState<string>('');
+  const [statusLookupBusy, setStatusLookupBusy] = useState<boolean>(false);
+  const [submittedUsername, setSubmittedUsername] = useState<string>('');
+  const [currentStatus, setCurrentStatus] = useState<string>('');
   const [showSuccess, setShowSuccess] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
 
@@ -79,6 +84,37 @@ export default function ApplyPage() {
       window.clearTimeout(timer);
     };
   }, [showSuccess]);
+
+  const pullApplicationStatus = async (username: string) => {
+    const safeUsername = String(username || '').trim();
+    if (!safeUsername) {
+      setStatusError('Please enter a Minecraft Username to check status.');
+      return;
+    }
+
+    setStatusLookupBusy(true);
+    setStatusError('');
+
+    try {
+      const response = await fetch(apiUrl(`/status/${encodeURIComponent(safeUsername)}`), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setStatusError(String(payload?.error || 'Unable to fetch status right now.'));
+        return;
+      }
+
+      setSubmittedUsername(String(payload?.username || safeUsername));
+      setCurrentStatus(String(payload?.status || 'Pending'));
+    } catch {
+      setStatusError('Network error while checking status. Please try again.');
+    } finally {
+      setStatusLookupBusy(false);
+    }
+  };
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -155,6 +191,12 @@ export default function ApplyPage() {
       });
 
       const payload = await response.json().catch(() => ({}));
+      if (response.redirected) {
+        setError('Submission was redirected unexpectedly. Please stay on this page and try again.');
+        setSubmitting(false);
+        return;
+      }
+
       if (!response.ok) {
         const message = String(payload?.error || 'Unable to submit your application right now. Please try again later.');
         setError(message);
@@ -168,6 +210,10 @@ export default function ApplyPage() {
       } catch {
         // Ignore storage errors.
       }
+
+      setSubmittedUsername(username);
+      setCurrentStatus(String(payload?.status || 'Pending'));
+      setStatusLookupUsername(username);
 
       setShowSuccess(true);
       form.reset();
@@ -244,12 +290,47 @@ export default function ApplyPage() {
         </Button>
       </form>
 
+      {(submittedUsername || currentStatus) ? (
+        <article className="card stack">
+          <h3>Application Received</h3>
+          <p>Your whitelist application will be reviewed by our team.</p>
+          <p><strong>Username:</strong> {submittedUsername || '--'}</p>
+          <p><strong>Current Status:</strong> {currentStatus || 'Pending'}</p>
+        </article>
+      ) : null}
+
+      <article className="card stack">
+        <h3>Check Application Status</h3>
+        <label>
+          Minecraft Username
+          <Input
+            className="field"
+            type="text"
+            value={statusLookupUsername}
+            onChange={(event) => setStatusLookupUsername(event.target.value)}
+            placeholder="Enter your Minecraft Username"
+          />
+        </label>
+        {statusError ? <p className="apply-form-error" role="alert">{statusError}</p> : null}
+        <Button
+          className="btn btn-secondary"
+          type="button"
+          style={{ border: 'none', cursor: 'pointer' }}
+          disabled={statusLookupBusy}
+          onClick={() => {
+            void pullApplicationStatus(statusLookupUsername);
+          }}
+        >
+          {statusLookupBusy ? 'Checking...' : 'Check Status'}
+        </Button>
+      </article>
+
       <div id="apply-success-popup" className={`apply-popup-backdrop ${showSuccess ? 'is-open' : ''}`} hidden={!showSuccess} onClick={(event) => {
           if (event.target === event.currentTarget) setShowSuccess(false);
         }}>
           <article className="apply-popup" role="dialog" aria-modal="true" aria-labelledby="apply-success-title" aria-describedby="apply-success-message">
             <h2 id="apply-success-title">Thank you for Applying!</h2>
-            <p id="apply-success-message">A Team of Verificator will Verify and Check the Form you gave us, please wait up to 1 - 2 Hours, if you haven't been contacted by our team in 24 Hours, feel free to contact the owner via the owner Social Media link in the Footer below! Or ask a friend that you know about this server!</p>
+            <p id="apply-success-message">Your application has been submitted and will be reviewed by our verification team. You can check your latest status on this page.</p>
             <Button id="apply-success-close" className="btn btn-primary" type="button" style={{ border: 'none', cursor: 'pointer' }} onClick={() => setShowSuccess(false)}>
               Close
             </Button>
