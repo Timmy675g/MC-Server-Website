@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/card';
 import { apiUrl } from '../lib/api-base';
+import { unwrapPayload } from '../lib/api-envelope';
 import { getAuthProvider } from '../lib/auth';
 
 type UptimePayload = {
@@ -103,8 +104,19 @@ export default function AdminPage() {
         if (!response.ok) throw new Error(`Failed uptime request: ${response.status}`);
 
         const raw = await response.json() as unknown;
-        const payload = (((raw as { payload?: UptimePayload } | null | undefined)?.payload)
-          ?? (raw as UptimePayload | undefined));
+        const payload = unwrapPayload<UptimePayload>(raw as { payload?: UptimePayload } | UptimePayload | null | undefined, {
+          generatedAt: new Date().toISOString(),
+          timezone: 'Asia/Jakarta',
+          stats: {
+            uptimePercent: null,
+            incidentMinutes: null,
+            incidentFreeStreakMinutes: null,
+          },
+          current: {
+            status: 'unknown',
+            label: 'Unknown',
+          },
+        });
 
         if (!mounted) return;
         setUptime({
@@ -152,8 +164,10 @@ export default function AdminPage() {
 
         if (!response.ok) throw new Error(`Failed status request: ${response.status}`);
         const raw = await response.json() as unknown;
-        const payload = (((raw as { payload?: { maintenance?: MaintenanceState } } | null | undefined)?.payload)
-          ?? (raw as { maintenance?: MaintenanceState } | undefined));
+        const payload = unwrapPayload<{ maintenance?: MaintenanceState }>(
+          raw as { payload?: { maintenance?: MaintenanceState } } | { maintenance?: MaintenanceState } | null | undefined,
+          { maintenance: undefined },
+        );
         const maintenancePayload = payload?.maintenance;
         if (!mounted) return;
         if (maintenancePayload) setMaintenance(maintenancePayload);
@@ -198,15 +212,18 @@ export default function AdminPage() {
       });
 
       const payload = await response.json().catch(() => null) as {
+        payload?: { applications?: AdminApplication[] };
         applications?: AdminApplication[];
         error?: string;
       } | null;
+
+      const body = unwrapPayload<{ applications?: AdminApplication[] }>(payload, { applications: [] });
 
       if (!response.ok) {
         throw new Error(String(payload?.error || `Failed to load applications: ${response.status}`));
       }
 
-      setApplications(Array.isArray(payload?.applications) ? payload.applications : []);
+      setApplications(Array.isArray(body?.applications) ? body.applications : []);
     } catch (error) {
       setApplicationsError(String((error as Error)?.message || error));
     } finally {
@@ -235,17 +252,20 @@ export default function AdminPage() {
       });
 
       const payload = await response.json().catch(() => null) as {
+        payload?: { application?: AdminApplication };
         application?: AdminApplication;
         error?: string;
       } | null;
 
-      if (!response.ok || !payload?.application) {
+      const body = unwrapPayload<{ application?: AdminApplication }>(payload, { application: undefined });
+
+      if (!response.ok || !body?.application) {
         throw new Error(String(payload?.error || `Failed to update status: ${response.status}`));
       }
 
       setApplications((prev) => prev.map((item) => {
         if (item.id !== id) return item;
-        return payload.application as AdminApplication;
+        return body.application as AdminApplication;
       }));
     } catch (error) {
       setApplicationsError(String((error as Error)?.message || error));
@@ -441,6 +461,7 @@ export default function AdminPage() {
         </div>
 
         {applicationsError ? <p style={{ marginTop: '0.8rem', color: 'var(--danger)' }}>{applicationsError}</p> : null}
+        {loadingApplications ? <p style={{ marginTop: '0.8rem' }}>Loading applications...</p> : null}
 
         <div style={{ marginTop: '1rem', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
