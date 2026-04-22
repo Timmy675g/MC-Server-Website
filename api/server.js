@@ -4,7 +4,14 @@ import rateLimit from 'express-rate-limit';
 import { io } from 'socket.io-client';
 import { status as statusJava, statusBedrock } from 'minecraft-server-util';
 import mysql from 'mysql2/promise';
-import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+console.log('DB_NAME Check:', process.env.DB_NAME ? 'Found' : 'NOT FOUND');
 
 const app = express();
 app.use(express.json());
@@ -86,11 +93,11 @@ const KUMA_MONITOR_ID = envNumber('KUMA_MONITOR_ID', 1);
 const KUMA_SOCKET_TIMEOUT_MS = envNumber('KUMA_SOCKET_TIMEOUT_MS', 10_000);
 const ADMIN_USERNAME = envString('ADMIN_USERNAME', '');
 const ADMIN_SECRET = envString('ADMIN_SECRET', '');
-const MYSQL_HOST = envString('MYSQL_HOST', '');
+const MYSQL_HOST = envString('MYSQL_HOST', envString('DB_HOST', ''));
 const MYSQL_PORT = envNumber('MYSQL_PORT', 3306);
-const MYSQL_USER = envString('MYSQL_USER', '');
-const MYSQL_PASSWORD = envString('MYSQL_PASSWORD', '');
-const MYSQL_DATABASE = envString('MYSQL_DATABASE', 'survivalkendy_db');
+const MYSQL_USER = envString('MYSQL_USER', envString('DB_USER', ''));
+const MYSQL_PASSWORD = envString('MYSQL_PASSWORD', envString('DB_PASS', ''));
+const MYSQL_DATABASE = envString('MYSQL_DATABASE', envString('DB_NAME', 'survivalkendy_db'));
 const APPLICATIONS_TABLE = envString('APPLICATIONS_TABLE', 'applications');
 const AUTO_WAITLIST_INTERVAL_MS = envNumber('AUTO_WAITLIST_INTERVAL_MS', 60_000);
 
@@ -287,12 +294,12 @@ function getApplicationsTableName() {
 }
 
 function hasMySqlConfig() {
-  return Boolean(MYSQL_HOST && MYSQL_USER && MYSQL_DATABASE);
+  return Boolean(MYSQL_HOST && MYSQL_USER && MYSQL_PASSWORD && MYSQL_DATABASE);
 }
 
 function getApplicationsPool() {
   if (!hasMySqlConfig()) {
-    throw new Error('MySQL is not configured. Set MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, and MYSQL_DATABASE.');
+    throw new Error('MySQL is not configured. Set MYSQL_HOST/MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE (or DB_HOST/DB_USER/DB_PASS/DB_NAME).');
   }
 
   if (applicationsPool) return applicationsPool;
