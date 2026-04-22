@@ -271,8 +271,8 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/join" element={<GuidePage />} />
           <Route path="/apply" element={<ApplyPage />} />
-          <Route path="/index" element={<Navigate to="/apply" replace />} />
-          <Route path="/index.html" element={<Navigate to="/apply" replace />} />
+          <Route path="/index" element={<ApplyPage />} />
+          <Route path="/index.html" element={<ApplyPage />} />
           <Route path="/news" element={<NewsPage />} />
           <Route path="/news/:id" element={<NewsArticlePage />} />
           <Route path="/stats" element={<StatsPage />} />
@@ -284,7 +284,7 @@ function App() {
           <Route path="/events" element={<EventsPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/admin" element={requireAdmin(<AdminPage />)} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<HomePage />} />
         </Route>
       </Routes>
     </Suspense>

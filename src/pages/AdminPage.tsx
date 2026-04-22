@@ -223,14 +223,13 @@ export default function AdminPage() {
         applications?: AdminApplication[];
         error?: string;
       } | null;
-
-      const body = unwrapPayload<{ applications?: AdminApplication[] }>(payload, { applications: [] });
+      const data = payload?.payload?.applications || payload?.applications || [];
 
       if (!response.ok) {
         throw new Error(String(payload?.error || `Failed to load applications: ${response.status}`));
       }
 
-      setApplications(Array.isArray(body?.applications) ? body.applications : []);
+      setApplications(Array.isArray(data) ? data : []);
       setApplicationsLoaded(true);
     } catch (error) {
       setApplicationsError(String((error as Error)?.message || error));
@@ -269,16 +268,15 @@ export default function AdminPage() {
         application?: AdminApplication;
         error?: string;
       } | null;
+      const updatedApplication = payload?.payload?.application || payload?.application;
 
-      const body = unwrapPayload<{ application?: AdminApplication }>(payload, { application: undefined });
-
-      if (!response.ok || !body?.application) {
+      if (!response.ok || !updatedApplication) {
         throw new Error(String(payload?.error || `Failed to update status: ${response.status}`));
       }
 
       setApplications((prev) => prev.map((item) => {
         if (item.id !== id) return item;
-        return body.application as AdminApplication;
+        return updatedApplication as AdminApplication;
       }));
     } catch (error) {
       setApplicationsError(String((error as Error)?.message || error));
