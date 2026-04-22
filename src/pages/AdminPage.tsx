@@ -85,6 +85,7 @@ export default function AdminPage() {
   const [adminSecret, setAdminSecret] = useState('');
   const [applications, setApplications] = useState<AdminApplication[]>([]);
   const [loadingApplications, setLoadingApplications] = useState(false);
+  const [applicationsLoaded, setApplicationsLoaded] = useState(false);
   const [applicationsError, setApplicationsError] = useState<string | null>(null);
   const [rowBusy, setRowBusy] = useState<Record<number, boolean>>({});
 
@@ -201,15 +202,21 @@ export default function AdminPage() {
 
     setLoadingApplications(true);
     setApplicationsError(null);
+    setApplicationsLoaded(false);
 
     try {
-      const response = await fetch(apiUrl('/admin/applications'), {
+      const response = await fetch(apiUrl('/api/admin/applications'), {
         method: 'GET',
         headers: {
           Accept: 'application/json',
           'Admin-Secret': adminSecret.trim(),
         },
       });
+
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      if (!contentType.includes('application/json')) {
+        throw new Error('Unexpected response format from admin API.');
+      }
 
       const payload = await response.json().catch(() => null) as {
         payload?: { applications?: AdminApplication[] };
@@ -224,6 +231,7 @@ export default function AdminPage() {
       }
 
       setApplications(Array.isArray(body?.applications) ? body.applications : []);
+      setApplicationsLoaded(true);
     } catch (error) {
       setApplicationsError(String((error as Error)?.message || error));
     } finally {
@@ -241,7 +249,7 @@ export default function AdminPage() {
     setRowBusy((prev) => ({ ...prev, [id]: true }));
 
     try {
-      const response = await fetch(apiUrl('/admin/update-status'), {
+      const response = await fetch(apiUrl('/api/admin/update-status'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -250,6 +258,11 @@ export default function AdminPage() {
         },
         body: JSON.stringify({ id, status }),
       });
+
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      if (!contentType.includes('application/json')) {
+        throw new Error('Unexpected response format from admin API.');
+      }
 
       const payload = await response.json().catch(() => null) as {
         payload?: { application?: AdminApplication };
@@ -462,6 +475,9 @@ export default function AdminPage() {
 
         {applicationsError ? <p style={{ marginTop: '0.8rem', color: 'var(--danger)' }}>{applicationsError}</p> : null}
         {loadingApplications ? <p style={{ marginTop: '0.8rem' }}>Loading applications...</p> : null}
+        {!loadingApplications && !applicationsLoaded && !applicationsError ? (
+          <p style={{ marginTop: '0.8rem' }}>Load applications to view the dashboard table.</p>
+        ) : null}
 
         <div style={{ marginTop: '1rem', overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
