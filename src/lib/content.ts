@@ -67,7 +67,7 @@ export const NEWS_ITEMS: NewsItem[] = [
   },
 ];
 
-export const FACTION_ITEMS: FactionItem[] = [
+export const PREVIOUS_FACTION_ITEMS: FactionItem[] = [
   {
     name: 'The Sinners of Mephistopheles:',
     description: 'We Are The Sinners.',
@@ -141,6 +141,11 @@ export const FACTION_ITEMS: FactionItem[] = [
     power: 9,
   },
 ];
+
+export const CURRENT_FACTION_ITEMS: FactionItem[] = [];
+
+// Backward compatibility export for existing imports.
+export const FACTION_ITEMS: FactionItem[] = PREVIOUS_FACTION_ITEMS;
 
 export function formatDate(value: string): string {
   const parsed = new Date(value);

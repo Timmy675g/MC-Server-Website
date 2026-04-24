@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FACTION_ITEMS } from '../lib/content';
+import { CURRENT_FACTION_ITEMS, PREVIOUS_FACTION_ITEMS } from '../lib/content';
 import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
 import { apiUrl } from '../lib/api-base';
@@ -71,10 +71,10 @@ function uptimeText(value: number | undefined): string {
 }
 
 export default function StatsPage() {
-  const [status, setStatus] = useState<StatusPayload | null>(null);
   const [uptime, setUptime] = useState<UptimePayload | null>(null);
   const [history, setHistory] = useState<PlayerPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [factionServerView, setFactionServerView] = useState<'current' | 'previous'>('current');
 
   useEffect(() => {
     let mounted = true;
@@ -107,7 +107,6 @@ export default function StatsPage() {
             incidentFreeStreakMinutes: 0,
           },
         });
-        setStatus(statusPayload);
         setUptime(uptimePayload);
         setHistory(pushHistory(Number(statusPayload.playersOnline ?? 0)));
       })
@@ -122,10 +121,10 @@ export default function StatsPage() {
     };
   }, []);
 
-  const ranking = useMemo(
-    () => [...FACTION_ITEMS].sort((a, b) => b.power - a.power),
-    [],
-  );
+  const ranking = useMemo(() => {
+    const selected = factionServerView === 'current' ? CURRENT_FACTION_ITEMS : PREVIOUS_FACTION_ITEMS;
+    return [...selected].sort((a, b) => b.power - a.power);
+  }, [factionServerView]);
 
   const maxPlayers = useMemo(() => {
     if (history.length === 0) return 1;
@@ -164,8 +163,8 @@ export default function StatsPage() {
         </div>
       </Card>
 
-      <section className="card-grid two-col" style={{ gridColumn: '1 / -1' }}>
-        <Card className="card">
+      <section className="card-grid" style={{ gridColumn: '1 / -1' }}>
+        <Card className="card" style={{ gridColumn: '1 / -1' }}>
           <h3>Uptime Statistics</h3>
           <p style={{ marginTop: '0.35rem' }}><Badge variant="outline">24H RANGE</Badge></p>
           <p className="stat-value">{uptimeText(uptime?.stats?.uptimePercent)}</p>
@@ -176,22 +175,33 @@ export default function StatsPage() {
             Incident time in range: {formatMinutesToHuman(uptime?.stats?.incidentMinutes)}
           </p>
         </Card>
-
-        <Card className="card">
-          <h3>Server Runtime Metrics</h3>
-          <div className="stack" style={{ marginTop: '0.45rem' }}>
-            <p>Players: <b>{status?.playersOnline ?? 0} / {status?.playersMax ?? 0}</b></p>
-            <p>TPS: <b>{status?.tps ?? '--'}</b></p>
-            <p>CPU Usage: <b>{status?.cpuUsage ?? '--'}%</b></p>
-            <p>RAM Usage: <b>{status?.ramUsage ?? '--'}%</b></p>
-          </div>
-        </Card>
       </section>
 
       <Card className="card" style={{ gridColumn: '1 / -1' }}>
         <h3>Faction Power Rankings</h3>
+        <div className="button-group" role="group" aria-label="Faction ranking server selector" style={{ marginTop: '0.6rem' }}>
+          <button
+            type="button"
+            className={`btn ${factionServerView === 'current' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setFactionServerView('current')}
+          >
+            Current Server
+          </button>
+          <button
+            type="button"
+            className={`btn ${factionServerView === 'previous' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setFactionServerView('previous')}
+          >
+            Previous Server
+          </button>
+        </div>
         <div className="stack" style={{ marginTop: '0.7rem' }}>
-          {ranking.map((faction, index) => (
+          {ranking.length === 0 ? (
+            <Card className="card" style={{ gridColumn: '1 / -1' }}>
+              <p><strong>No faction data for current server.</strong></p>
+              <p className="meta">Switch to Previous Server to view historical clan information.</p>
+            </Card>
+          ) : ranking.map((faction, index) => (
             <Card key={faction.name} className="card" style={{ gridColumn: '1 / -1' }}>
               <p><strong>#{index + 1} {faction.name}</strong></p>
               <p>Power score: <b>{faction.power}</b></p>

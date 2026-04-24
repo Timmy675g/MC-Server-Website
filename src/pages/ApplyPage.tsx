@@ -9,6 +9,14 @@ const APPLY_SUBMIT_FLAG = 'sk_apply_submitted';
 const APPLY_LAST_SUBMIT_KEY = 'sk_apply_last_submit_ms';
 const APPLY_RATE_LIMIT_MS = 90 * 1000;
 const APPLY_MIN_FILL_MS = 4000;
+
+const CONSENT_ITEMS = [
+  'I hereby consent to the collection of anonymized gameplay telemetry for the Link-26 Research Project (RMPV 1.2.1).',
+  'I agree to participate in brief periodic surveys regarding collaborative dynamics and social interactions within the SurvivalKendy ecosystem.',
+  'I acknowledge that I am a voluntary participant and reserve the right to withdraw from the research study at any time without penalty.',
+  'I agree to abide by the System Integrity Protocol, which strictly prohibits the use of third-party exploits, hacks, or unauthorized scripts.',
+] as const;
+
 function nowMs(): number {
   return Date.now();
 }
@@ -21,6 +29,7 @@ export default function ApplyPage() {
   const [statusLookupBusy, setStatusLookupBusy] = useState<boolean>(false);
   const [submittedUsername, setSubmittedUsername] = useState<string>('');
   const [currentStatus, setCurrentStatus] = useState<string>('');
+  const [consents, setConsents] = useState<boolean[]>(() => CONSENT_ITEMS.map(() => false));
   const [showSuccess, setShowSuccess] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
 
@@ -35,6 +44,8 @@ export default function ApplyPage() {
     }
   });
   const [submitting, setSubmitting] = useState(false);
+
+  const allConsentsChecked = consents.every(Boolean);
 
   const isFileProtocol = (() => {
     if (typeof window === 'undefined') return false;
@@ -158,7 +169,7 @@ export default function ApplyPage() {
     const school = String(formData.get('school') || '').trim();
     const invitedBy = String(formData.get('invited_by') || '').trim();
     const reason = String(formData.get('motivation') || '').trim();
-    const agreementConfirmed = formData.get('agreement_confirmed') === 'on';
+    const agreementConfirmed = allConsentsChecked;
 
     if (!username || !discordTag || !grade || !school || !invitedBy || !reason) {
       setError('Please fill out all required fields before submitting.');
@@ -166,7 +177,7 @@ export default function ApplyPage() {
     }
 
     if (!agreementConfirmed) {
-      setError('You must accept the server rules acknowledgment to submit.');
+      setError('You must accept all consent checkboxes before submitting.');
       return;
     }
 
@@ -214,6 +225,7 @@ export default function ApplyPage() {
       setSubmittedUsername(username);
       setCurrentStatus(String(payload?.status || 'Pending'));
       setStatusLookupUsername(username);
+      setConsents(CONSENT_ITEMS.map(() => false));
 
       setShowSuccess(true);
       form.reset();
@@ -279,13 +291,25 @@ export default function ApplyPage() {
           <Textarea className="field" rows={4} name="motivation" required />
         </label>
 
-        <label className="apply-agreement-row">
-          <input type="checkbox" name="agreement_confirmed" required />
-          <span>I understand that SurvivalKendy is a community based server and cheating, hacking and illegal activities will result in a permanent Hardware ban.</span>
-        </label>
+        <section className="stack" style={{ gap: '0.65rem' }} aria-label="Research consent checkboxes">
+          {CONSENT_ITEMS.map((text, index) => (
+            <label key={text} className="apply-agreement-row">
+              <input
+                type="checkbox"
+                checked={consents[index]}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setConsents((prev) => prev.map((value, i) => (i === index ? checked : value)));
+                }}
+                required
+              />
+              <span>{text}</span>
+            </label>
+          ))}
+        </section>
 
         {error ? <p id="apply-form-error" className="apply-form-error" role="alert">{error}</p> : null}
-        <Button className="btn btn-primary" type="submit" style={{ border: 'none', cursor: 'pointer' }} disabled={submitting}>
+        <Button className="btn btn-primary" type="submit" style={{ border: 'none', cursor: 'pointer' }} disabled={submitting || !allConsentsChecked}>
           {submitting ? 'Submitting...' : 'Apply'}
         </Button>
       </form>

@@ -2,7 +2,10 @@ import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import { getStatus, getUptime } from '../lib/api';
 import { assetUrl } from '../lib/asset-url';
-import { FACTION_ITEMS, NEWS_ITEMS, formatDate } from '../lib/content';
+import { CURRENT_FACTION_ITEMS, NEWS_ITEMS, formatDate } from '../lib/content';
+import { Button } from '../components/ui/button';
+import { Card } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
 import type { ServerStatus, UptimeStats } from '../types/api';
 
 const NEWS_ROTATE_MS = 6200;
@@ -215,7 +218,7 @@ export default function HomePage() {
       },
       {
         label: 'Factions',
-        value: `${FACTION_ITEMS.length}`,
+        value: `${CURRENT_FACTION_ITEMS.length}`,
         className: '',
       },
       {
@@ -227,7 +230,7 @@ export default function HomePage() {
       },
       {
         label: 'Location',
-        value: 'Jakarta, Indonesia',
+        value: '🇸🇬 Singapore',
         className: '',
       },
     ];
@@ -292,6 +295,7 @@ export default function HomePage() {
         </video>
         <div className="home-intro-overlay" />
         <div className="home-intro-content container">
+          <Badge variant="outline" className="home-intro-badge shadcn-float">SurvivalKendy • Community Server</Badge>
           <p className="home-intro-kicker">
             <span className="brand-survival">Survival</span><span className="brand-kendy">Kendy</span>{' '}
             <span className="brand-minecraft">Minecraft</span>{' '}
@@ -300,8 +304,12 @@ export default function HomePage() {
           <h1>Where Strategy Shapes the World.</h1>
           <p>Build alliances, lead your faction, and create stories worth remembering.</p>
           <div className="button-group home-intro-actions">
-            <Link to="/join" className="btn btn-primary">Enter Server</Link>
-            <a href="#home-content" className="btn btn-outline">Explore Site</a>
+            <Button asChild variant="primary" size="lg" className="shadcn-glow home-cta-btn">
+              <Link to="/join">Enter Server</Link>
+            </Button>
+            <Button asChild variant="outline" size="lg" className="home-cta-btn">
+              <a href="#home-content">Explore Site</a>
+            </Button>
           </div>
           <a className="home-intro-scroll" href="#home-content" aria-label="Scroll to content">
             <span />
@@ -319,9 +327,15 @@ export default function HomePage() {
             <p className="subtitle">&quot;A server where creativity and strategy matter&quot;</p>
             {error ? <p className="meta">{error}</p> : null}
             <div className="button-group">
-              <Link to="/join" className="btn btn-primary">JOIN NOW</Link>
-              <Link to="/news" className="btn btn-secondary">READ THE NEWS</Link>
-              <Link to="/rules" className="btn btn-outline">VIEW RULES</Link>
+              <Button asChild variant="primary" className="shadcn-glow home-cta-btn">
+                <Link to="/join">JOIN NOW</Link>
+              </Button>
+              <Button asChild variant="default" className="home-cta-btn">
+                <Link to="/news">READ THE NEWS</Link>
+              </Button>
+              <Button asChild variant="outline" className="home-cta-btn">
+                <Link to="/rules">VIEW RULES</Link>
+              </Button>
             </div>
           </div>
           <div className="hero-image-card">
@@ -331,11 +345,11 @@ export default function HomePage() {
         </div>
 
         <div className="stats-grid" id="home-live-stats">
-          {cards.map((card) => (
-            <article key={card.label} className="stat-box">
+          {cards.map((card, index) => (
+            <Card key={card.label} className="stat-box shadcn-card-lift" style={{ animationDelay: `${index * 80}ms` }}>
               <span className="stat-label">{card.label}</span>
               <span className={`stat-value ${card.className}`}>{card.value}</span>
-            </article>
+            </Card>
           ))}
         </div>
       </header>
@@ -343,29 +357,30 @@ export default function HomePage() {
       <section className="container reveal in-view section">
         <h2>What Makes Us Different</h2>
         <div className="card-grid four-up">
-          <article className="card feature-card">
+          <Card className="card feature-card shadcn-card-lift">
             <h3>Experienced Owner And Maintainer</h3>
             <p>The owner has extensive experience in managing and maintaining Minecraft servers, ensuring a smooth and enjoyable experience for all players.</p>
-          </article>
-          <article className="card feature-card">
+          </Card>
+          <Card className="card feature-card shadcn-card-lift">
             <h3>Community-Driven News</h3>
             <p>Community-driven news coverage documenting server events as they unfold.</p>
-          </article>
-          <article className="card feature-card">
+          </Card>
+          <Card className="card feature-card shadcn-card-lift">
             <h3>Professional Infrastructure</h3>
             <ul>
               <li>Avg 15ms ping</li>
-              <li>Avg 20 TPS</li>
+              <li>Avg 19 TPS</li>
               <li>Live uptime shown on Home, Stats, and Uptime pages</li>
-              <li>GCP C4D with 4 vCPU</li>
-              <li>16GB DDR5 RAM</li>
-              <li>50 GB Hyperdisk</li>
+              <li>DigitalOcean C4D with 4 vCPU</li>
+              <li>8GB DDR4 RAM ( 2,933 MHz )</li>
+              <li>80 GB SSD Storage</li>
+              <li>Up to 30 Players support</li>
             </ul>
-          </article>
-          <article className="card feature-card">
+          </Card>
+          <Card className="card feature-card shadcn-card-lift">
             <h3>Diverse Community</h3>
             <p>Gender inclusive, talent rich, lots of different teams and built from a school based social network.</p>
-          </article>
+          </Card>
         </div>
       </section>
 
@@ -447,22 +462,22 @@ export default function HomePage() {
       <section className="container reveal in-view section">
         <h2>Quick Stats</h2>
         <div className="card-grid four-up" id="quick-stats">
-          <article className="card metric-card">
+          <Card className="card metric-card shadcn-card-lift">
             <p>Online Players</p>
             <h3>{status?.playersOnline ?? '--'}</h3>
-          </article>
-          <article className="card metric-card">
+          </Card>
+          <Card className="card metric-card shadcn-card-lift">
             <p>Total Factions</p>
-            <h3>{FACTION_ITEMS.length}</h3>
-          </article>
-          <article className="card metric-card">
+            <h3>{CURRENT_FACTION_ITEMS.length}</h3>
+          </Card>
+          <Card className="card metric-card shadcn-card-lift">
             <p>Server Uptime</p>
             <h3>{uptime?.uptimePercent !== null && uptime?.uptimePercent !== undefined ? `${uptime.uptimePercent.toFixed(2)}%` : '--'}</h3>
-          </article>
-          <article className="card metric-card">
+          </Card>
+          <Card className="card metric-card shadcn-card-lift">
             <p>Total Registered Players</p>
             <h3>{registeredPlayers}</h3>
-          </article>
+          </Card>
         </div>
       </section>
     </>
