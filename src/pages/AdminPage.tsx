@@ -32,6 +32,10 @@ type AdminApplication = {
   id: number;
   username: string;
   discord_tag: string;
+  grade: string;
+  school: string;
+  invited_by: string;
+  reason: string;
   status: string;
   created_at?: string | null;
 };
@@ -478,12 +482,16 @@ export default function AdminPage() {
         ) : null}
 
         <div style={{ marginTop: '1rem', overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '720px' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1180px' }}>
             <thead>
               <tr>
                 <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>ID</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Username</th>
-                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Discord</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Minecraft Username</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Grade</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>School</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Discord Username</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Invited By</th>
+                <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Reason Why You Want To Join</th>
                 <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Status</th>
                 <th style={{ textAlign: 'left', borderBottom: '1px solid var(--line)', padding: '0.6rem' }}>Actions</th>
               </tr>
@@ -491,7 +499,7 @@ export default function AdminPage() {
             <tbody>
               {applications.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ padding: '0.8rem', color: 'var(--muted)' }}>
+                  <td colSpan={9} style={{ padding: '0.8rem', color: 'var(--muted)' }}>
                     No applications loaded.
                   </td>
                 </tr>
@@ -501,7 +509,11 @@ export default function AdminPage() {
                   <tr key={item.id} style={getRowStyle(item.status)}>
                     <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.id}</td>
                     <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.username}</td>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.grade || '--'}</td>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)', whiteSpace: 'normal', minWidth: '180px' }}>{item.school || '--'}</td>
                     <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.discord_tag}</td>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)', whiteSpace: 'normal', minWidth: '150px' }}>{item.invited_by || '--'}</td>
+                    <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)', whiteSpace: 'normal', minWidth: '300px' }}>{item.reason || '--'}</td>
                     <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>{item.status}</td>
                     <td style={{ padding: '0.6rem', borderBottom: '1px solid var(--line)' }}>
                       <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>

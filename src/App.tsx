@@ -22,6 +22,8 @@ const AboutPage = lazy(() => import('./pages/AboutPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
+const ResearchConsentPage = lazy(() => import('./pages/ResearchConsentPage'));
+const TermsFairPlayPage = lazy(() => import('./pages/TermsFairPlayPage'));
 
 const MIN_BOOT_MS = 260;
 // Ping-pong uses alternate direction, so one full left->right->left cycle is 2x duration.
@@ -149,6 +151,8 @@ function preloadRoutes() {
     import('./pages/RulesPage'),
     import('./pages/AboutPage'),
     import('./pages/EventsPage'),
+    import('./pages/ResearchConsentPage'),
+    import('./pages/TermsFairPlayPage'),
     import('./pages/PlayersPage'),
     import('./pages/StatsPage'),
     import('./pages/UptimePage'),
@@ -280,6 +284,10 @@ function App() {
           <Route path="/players" element={<PlayersPage />} />
           <Route path="/factions" element={<FactionsPage />} />
           <Route path="/rules" element={<RulesPage />} />
+          <Route path="/research-consent" element={<ResearchConsentPage />} />
+          <Route path="/research-consent.html" element={<ResearchConsentPage />} />
+          <Route path="/terms-fair-play" element={<TermsFairPlayPage />} />
+          <Route path="/terms-fair-play.html" element={<TermsFairPlayPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/login" element={<LoginPage />} />

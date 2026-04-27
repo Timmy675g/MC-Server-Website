@@ -950,7 +950,7 @@ async function listAdminApplications(_req, res) {
     const table = getApplicationsTableName();
     const pool = getApplicationsPool();
     const sql = `
-      SELECT id, username, discord_tag, status, created_at
+      SELECT id, username, discord_tag, grade, school, invited_by, reason, status, created_at
       FROM \`${table}\`
       ORDER BY created_at DESC
       LIMIT 500
@@ -961,6 +961,10 @@ async function listAdminApplications(_req, res) {
       id: Number(row.id || 0),
       username: String(row.username || ''),
       discord_tag: String(row.discord_tag || ''),
+      grade: String(row.grade || ''),
+      school: String(row.school || ''),
+      invited_by: String(row.invited_by || ''),
+      reason: String(row.reason || ''),
       status: String(row.status || 'Pending'),
       created_at: row.created_at || null,
     })) : [];
@@ -1002,7 +1006,7 @@ async function updateAdminApplicationStatus(req, res) {
     }
 
     const fetchSql = `
-      SELECT id, username, discord_tag, status, created_at
+      SELECT id, username, discord_tag, grade, school, invited_by, reason, status, created_at
       FROM \`${table}\`
       WHERE id = ?
       LIMIT 1
@@ -1020,6 +1024,10 @@ async function updateAdminApplicationStatus(req, res) {
         id: Number(row.id || 0),
         username: String(row.username || ''),
         discord_tag: String(row.discord_tag || ''),
+        grade: String(row.grade || ''),
+        school: String(row.school || ''),
+        invited_by: String(row.invited_by || ''),
+        reason: String(row.reason || ''),
         status: String(row.status || 'Pending'),
         created_at: row.created_at || null,
       },

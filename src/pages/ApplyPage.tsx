@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Textarea } from '../components/ui/textarea';
@@ -19,6 +20,37 @@ const CONSENT_ITEMS = [
 
 function nowMs(): number {
   return Date.now();
+}
+
+function normalizePath(path: string): string {
+  if (!path) return '/';
+  return path.startsWith('/') ? path : `/${path}`;
+}
+
+function toApiPrefixedPath(path: string): string {
+  const normalized = normalizePath(path);
+  if (normalized === '/api') return '/api';
+  if (normalized.startsWith('/api/')) return normalized;
+  return `/api${normalized}`;
+}
+
+function buildFailoverEndpoints(path: string): string[] {
+  const normalized = normalizePath(path);
+  const apiPath = toApiPrefixedPath(normalized);
+
+  const candidates = [
+    // Prefer same-origin website server path first for lower-latency local routing.
+    apiPath,
+    normalized,
+    apiUrl(apiPath),
+    apiUrl(normalized),
+  ];
+
+  return Array.from(new Set(candidates.filter(Boolean)));
+}
+
+async function readJsonSafe(response: Response): Promise<Record<string, unknown>> {
+  return response.json().catch(() => ({} as Record<string, unknown>));
 }
 
 export default function ApplyPage() {
@@ -107,19 +139,42 @@ export default function ApplyPage() {
     setStatusError('');
 
     try {
-      const response = await fetch(apiUrl(`/status/${encodeURIComponent(safeUsername)}`), {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
+      const endpoints = buildFailoverEndpoints(`/status/${encodeURIComponent(safeUsername)}`);
+      let finalPayload: Record<string, unknown> = {};
+      let success = false;
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setStatusError(String(payload?.error || 'Unable to fetch status right now.'));
-        return;
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+          });
+
+          const payload = await readJsonSafe(response);
+          finalPayload = payload;
+
+          if (!response.ok) {
+            // Keep trying fallback endpoints for server-side failures.
+            if (response.status >= 500 || response.status === 502 || response.status === 503 || response.status === 504) {
+              continue;
+            }
+
+            setStatusError(String(payload?.error || 'Unable to fetch status right now.'));
+            return;
+          }
+
+          setSubmittedUsername(String(payload?.username || safeUsername));
+          setCurrentStatus(String(payload?.status || 'Pending'));
+          success = true;
+          break;
+        } catch {
+          // Try next fallback endpoint.
+        }
       }
 
-      setSubmittedUsername(String(payload?.username || safeUsername));
-      setCurrentStatus(String(payload?.status || 'Pending'));
+      if (!success) {
+        setStatusError(String(finalPayload?.error || 'Network error while checking status. Please try again.'));
+      }
     } catch {
       setStatusError('Network error while checking status. Please try again.');
     } finally {
@@ -184,34 +239,59 @@ export default function ApplyPage() {
     setSubmitting(true);
 
     try {
-      const response = await fetch(apiUrl('/apply'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          username,
-          discord_tag: discordTag,
-          grade,
-          school,
-          invited_by: invitedBy,
-          reason,
-          agreement_confirmed: agreementConfirmed,
-        }),
+      const payloadBody = JSON.stringify({
+        username,
+        discord_tag: discordTag,
+        grade,
+        school,
+        invited_by: invitedBy,
+        reason,
+        agreement_confirmed: agreementConfirmed,
       });
 
-      const payload = await response.json().catch(() => ({}));
-      if (response.redirected) {
-        setError('Submission was redirected unexpectedly. Please stay on this page and try again.');
-        setSubmitting(false);
-        return;
+      const endpoints = buildFailoverEndpoints('/apply');
+      let payload: Record<string, unknown> = {};
+      let submitted = false;
+
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+            },
+            body: payloadBody,
+          });
+
+          payload = await readJsonSafe(response);
+
+          if (response.redirected) {
+            // Skip redirected endpoint and try fallback route.
+            continue;
+          }
+
+          if (!response.ok) {
+            // Retry on transient gateway/server errors; stop on validation/auth errors.
+            if (response.status >= 500 || response.status === 502 || response.status === 503 || response.status === 504) {
+              continue;
+            }
+
+            const message = String(payload?.error || 'Unable to submit your application right now. Please try again later.');
+            setError(message);
+            return;
+          }
+
+          submitted = true;
+          break;
+        } catch {
+          // Try next fallback endpoint.
+        }
       }
 
-      if (!response.ok) {
+      if (!submitted) {
         const message = String(payload?.error || 'Unable to submit your application right now. Please try again later.');
         setError(message);
-        setSubmitting(false);
         return;
       }
 
@@ -251,7 +331,7 @@ export default function ApplyPage() {
       ) : null}
 
       <form
-        className="card stack"
+        className="card stack apply-form"
         id="apply-form"
         onSubmit={onSubmit}
       >
@@ -266,32 +346,48 @@ export default function ApplyPage() {
           aria-label="Leave this field empty"
         />
 
-        <label>
+        <label className="apply-field">
           Minecraft Username
           <Input className="field" type="text" name="mc_username" placeholder=".BedrockName or JavaName" required />
         </label>
-        <label>
+        <label className="apply-field">
           Grade
           <Input className="field" type="text" name="grade" required />
         </label>
-        <label>
+        <label className="apply-field">
           School
           <Input className="field" type="text" name="school" required />
         </label>
-        <label>
+        <label className="apply-field">
           Discord Username
           <Input className="field" type="text" name="discord_username" placeholder="username or username#1234" required />
         </label>
-        <label>
+        <label className="apply-field">
           Invited By
           <Input className="field" type="text" name="invited_by" placeholder="Friend username / who invited you" required />
         </label>
-        <label>
+        <label className="apply-field apply-field-wide">
           Reason Why You Want To Join
           <Textarea className="field" rows={4} name="motivation" required />
         </label>
 
-        <section className="stack" style={{ gap: '0.65rem' }} aria-label="Research consent checkboxes">
+        <article className="card apply-doc-links">
+          <p style={{ marginBottom: '0.5rem' }}>
+            Please read these documents before confirming consent:
+          </p>
+          <p>
+            <Link className="link-arrow" to="/research-consent" target="_blank" rel="noreferrer">
+              Research Consent -&gt;
+            </Link>
+          </p>
+          <p>
+            <Link className="link-arrow" to="/terms-fair-play" target="_blank" rel="noreferrer">
+              Terms of Service &amp; Fair Play -&gt;
+            </Link>
+          </p>
+        </article>
+
+        <section className="stack apply-consent-list" style={{ gap: '0.65rem' }} aria-label="Research consent checkboxes">
           {CONSENT_ITEMS.map((text, index) => (
             <label key={text} className="apply-agreement-row">
               <input
@@ -309,7 +405,7 @@ export default function ApplyPage() {
         </section>
 
         {error ? <p id="apply-form-error" className="apply-form-error" role="alert">{error}</p> : null}
-        <Button className="btn btn-primary" type="submit" style={{ border: 'none', cursor: 'pointer' }} disabled={submitting || !allConsentsChecked}>
+        <Button className="btn btn-primary apply-submit" type="submit" style={{ border: 'none', cursor: 'pointer' }} disabled={submitting || !allConsentsChecked}>
           {submitting ? 'Submitting...' : 'Apply'}
         </Button>
       </form>
