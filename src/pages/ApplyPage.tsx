@@ -41,7 +41,6 @@ function buildFailoverEndpoints(path: string): string[] {
   const candidates = [
     // Prefer same-origin website server path first for lower-latency local routing.
     apiPath,
-    normalized,
     apiUrl(apiPath),
     apiUrl(normalized),
   ];
@@ -154,8 +153,15 @@ export default function ApplyPage() {
           finalPayload = payload;
 
           if (!response.ok) {
-            // Keep trying fallback endpoints for server-side failures.
-            if (response.status >= 500 || response.status === 502 || response.status === 503 || response.status === 504) {
+            // Keep trying fallback endpoints for route misses and transient server failures.
+            if (
+              response.status === 404
+              || response.status === 405
+              || response.status >= 500
+              || response.status === 502
+              || response.status === 503
+              || response.status === 504
+            ) {
               continue;
             }
 
@@ -272,8 +278,15 @@ export default function ApplyPage() {
           }
 
           if (!response.ok) {
-            // Retry on transient gateway/server errors; stop on validation/auth errors.
-            if (response.status >= 500 || response.status === 502 || response.status === 503 || response.status === 504) {
+            // Retry on route misses/transient gateway errors; stop on validation/auth errors.
+            if (
+              response.status === 404
+              || response.status === 405
+              || response.status >= 500
+              || response.status === 502
+              || response.status === 503
+              || response.status === 504
+            ) {
               continue;
             }
 
