@@ -94,10 +94,12 @@ const KUMA_SOCKET_TIMEOUT_MS = envNumber('KUMA_SOCKET_TIMEOUT_MS', 10_000);
 const ADMIN_USERNAME = envString('ADMIN_USERNAME', '');
 const ADMIN_SECRET = envString('ADMIN_SECRET', '');
 const MYSQL_HOST = envString('MYSQL_HOST', envString('DB_HOST', ''));
+const MYSQL_HOST_FALLBACK = envString('MYSQL_HOST_FALLBACK', envString('DB_HOST_FALLBACK', ''));
 const MYSQL_PORT = envNumber('MYSQL_PORT', 3306);
 const MYSQL_USER = envString('MYSQL_USER', envString('DB_USER', ''));
 const MYSQL_PASSWORD = envString('MYSQL_PASSWORD', envString('DB_PASS', ''));
 const MYSQL_DATABASE = envString('MYSQL_DATABASE', envString('DB_NAME', 'survivalkendy_db'));
+const MYSQL_CONNECT_TIMEOUT_MS = envNumber('MYSQL_CONNECT_TIMEOUT_MS', 2200);
 const APPLICATIONS_TABLE = envString('APPLICATIONS_TABLE', 'applications');
 const AUTO_WAITLIST_INTERVAL_MS = envNumber('AUTO_WAITLIST_INTERVAL_MS', 60_000);
 
@@ -108,7 +110,8 @@ let cachedStatus = null;
 let cachedStatusAt = 0;
 let cachedUptime = null;
 let cachedUptimeAt = 0;
-let applicationsPool = null;
+const applicationsPools = new Map();
+let activeMySqlHost = null;
 let applicationsSchemaReady = false;
 let autoWaitlistTimer = null;
 const maintenanceState = {
@@ -250,6 +253,36 @@ function getMaintenanceSnapshot() {
   };
 }
 
+function parseMySqlHosts() {
+  const hostList = [
+    ...String(MYSQL_HOST || '').split(','),
+    ...String(MYSQL_HOST_FALLBACK || '').split(','),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(hostList));
+}
+
+const MYSQL_HOSTS = parseMySqlHosts();
+
+function isMySqlConnectionError(error) {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    code === 'PROTOCOL_CONNECTION_LOST'
+    || code === 'ER_SERVER_SHUTDOWN'
+    || code === 'ECONNREFUSED'
+    || code === 'ECONNRESET'
+    || code === 'ETIMEDOUT'
+    || code === 'EHOSTUNREACH'
+    || code === 'ENETUNREACH'
+    || message.includes('read etimedout')
+    || message.includes('connect etimedout')
+    || message.includes('connection lost')
+  );
+}
+
 function applyMaintenanceToStatus(statusPayload) {
   const maintenance = getMaintenanceSnapshot();
   if (!maintenance.active) {
@@ -294,18 +327,14 @@ function getApplicationsTableName() {
 }
 
 function hasMySqlConfig() {
-  return Boolean(MYSQL_HOST && MYSQL_USER && MYSQL_PASSWORD && MYSQL_DATABASE);
+  return Boolean(MYSQL_HOSTS.length > 0 && MYSQL_USER && MYSQL_PASSWORD && MYSQL_DATABASE);
 }
 
-function getApplicationsPool() {
-  if (!hasMySqlConfig()) {
-    throw new Error('MySQL is not configured. Set MYSQL_HOST/MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE (or DB_HOST/DB_USER/DB_PASS/DB_NAME).');
-  }
+function getOrCreateApplicationsPool(host) {
+  if (applicationsPools.has(host)) return applicationsPools.get(host);
 
-  if (applicationsPool) return applicationsPool;
-
-  applicationsPool = mysql.createPool({
-    host: MYSQL_HOST,
+  const pool = mysql.createPool({
+    host,
     port: MYSQL_PORT,
     user: MYSQL_USER,
     password: MYSQL_PASSWORD,
@@ -313,18 +342,83 @@ function getApplicationsPool() {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
+    connectTimeout: MYSQL_CONNECT_TIMEOUT_MS,
     enableKeepAlive: true,
     keepAliveInitialDelay: 10_000,
   });
 
-  return applicationsPool;
+  applicationsPools.set(host, pool);
+  return pool;
+}
+
+async function canUsePool(pool) {
+  try {
+    await Promise.race([
+      pool.query('SELECT 1'),
+      new Promise((_, reject) => {
+        const timeoutId = setTimeout(() => {
+          clearTimeout(timeoutId);
+          reject(new Error('MySQL probe timeout'));
+        }, Math.max(1200, MYSQL_CONNECT_TIMEOUT_MS));
+      }),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function getApplicationsPool() {
+  if (!hasMySqlConfig()) {
+    throw new Error('MySQL is not configured. Set MYSQL_HOST(+MYSQL_HOST_FALLBACK)/MYSQL_USER/MYSQL_PASSWORD/MYSQL_DATABASE (or DB_HOST/DB_USER/DB_PASS/DB_NAME).');
+  }
+
+  const orderedHosts = activeMySqlHost
+    ? [activeMySqlHost, ...MYSQL_HOSTS.filter((host) => host !== activeMySqlHost)]
+    : [...MYSQL_HOSTS];
+
+  for (const host of orderedHosts) {
+    const pool = getOrCreateApplicationsPool(host);
+    const healthy = await canUsePool(pool);
+    if (!healthy) continue;
+    if (activeMySqlHost !== host) {
+      activeMySqlHost = host;
+      console.log(`[api] MySQL active host: ${host}`);
+    }
+    return pool;
+  }
+
+  throw new Error(`Unable to connect to MySQL hosts within timeout (${MYSQL_CONNECT_TIMEOUT_MS}ms): ${MYSQL_HOSTS.join(', ')}`);
+}
+
+async function executeApplicationsQuery(sql, params = [], options = {}) {
+  const allowRetry = options.allowRetry !== false;
+
+  const pool = await getApplicationsPool();
+
+  try {
+    return await pool.execute(sql, params);
+  } catch (error) {
+    if (!allowRetry || !isMySqlConnectionError(error)) {
+      throw error;
+    }
+
+    // Force host re-selection and retry once on alternate host.
+    const failedHost = activeMySqlHost;
+    activeMySqlHost = null;
+    if (failedHost) {
+      console.warn(`[api] MySQL host failed (${failedHost}), retrying on fallback host.`);
+    }
+
+    const retryPool = await getApplicationsPool();
+    return await retryPool.execute(sql, params);
+  }
 }
 
 async function ensureApplicationsSchema() {
   if (applicationsSchemaReady) return;
 
   const table = getApplicationsTableName();
-  const pool = getApplicationsPool();
   const createSql = `
     CREATE TABLE IF NOT EXISTS \`${table}\` (
       id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -343,13 +437,13 @@ async function ensureApplicationsSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `;
 
-  await pool.execute(createSql);
-  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS grade VARCHAR(50) NOT NULL DEFAULT ''`);
-  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS school VARCHAR(255) NOT NULL DEFAULT ''`);
-  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS invited_by VARCHAR(255) NOT NULL DEFAULT ''`);
-  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS agreement_confirmed TINYINT(1) NOT NULL DEFAULT 0`);
-  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'Pending'`);
-  await pool.execute(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`);
+  await executeApplicationsQuery(createSql);
+  await executeApplicationsQuery(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS grade VARCHAR(50) NOT NULL DEFAULT ''`);
+  await executeApplicationsQuery(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS school VARCHAR(255) NOT NULL DEFAULT ''`);
+  await executeApplicationsQuery(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS invited_by VARCHAR(255) NOT NULL DEFAULT ''`);
+  await executeApplicationsQuery(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS agreement_confirmed TINYINT(1) NOT NULL DEFAULT 0`);
+  await executeApplicationsQuery(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS status VARCHAR(32) NOT NULL DEFAULT 'Pending'`);
+  await executeApplicationsQuery(`ALTER TABLE \`${table}\` ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`);
 
   applicationsSchemaReady = true;
 }
@@ -358,7 +452,6 @@ async function autoWaitlist() {
   await ensureApplicationsSchema();
 
   const table = getApplicationsTableName();
-  const pool = getApplicationsPool();
   const sql = `
     UPDATE \`${table}\`
     SET status = 'Waitlist'
@@ -366,7 +459,7 @@ async function autoWaitlist() {
       AND created_at < (NOW() - INTERVAL 1 HOUR)
   `;
 
-  const [result] = await pool.execute(sql);
+  const [result] = await executeApplicationsQuery(sql);
   return Number(result?.affectedRows || 0);
 }
 
@@ -863,13 +956,12 @@ async function submitApplication(req, res) {
     await ensureApplicationsSchema();
 
     const table = getApplicationsTableName();
-    const pool = getApplicationsPool();
     const sql = `
       INSERT INTO \`${table}\` (username, discord_tag, grade, school, invited_by, reason, agreement_confirmed)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `;
 
-    const [result] = await pool.execute(sql, [
+    const [result] = await executeApplicationsQuery(sql, [
       username,
       discordTag,
       grade,
@@ -901,16 +993,15 @@ async function getApplicationStatus(req, res) {
     await autoWaitlist();
 
     const table = getApplicationsTableName();
-    const pool = getApplicationsPool();
     const sql = `
       SELECT username, discord_tag, status, created_at
       FROM \`${table}\`
       WHERE username = ?
-      ORDER BY created_at DESC
+      ORDER BY created_at DESC, id DESC
       LIMIT 1
     `;
 
-    const [rows] = await pool.execute(sql, [username]);
+    const [rows] = await executeApplicationsQuery(sql, [username]);
     const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
 
     if (!row) {
@@ -948,7 +1039,6 @@ async function listAdminApplications(_req, res) {
     await autoWaitlist();
 
     const table = getApplicationsTableName();
-    const pool = getApplicationsPool();
     const sql = `
       SELECT id, username, discord_tag, grade, school, invited_by, reason, status, created_at
       FROM \`${table}\`
@@ -956,7 +1046,7 @@ async function listAdminApplications(_req, res) {
       LIMIT 500
     `;
 
-    const [rows] = await pool.execute(sql);
+    const [rows] = await executeApplicationsQuery(sql);
     const applications = Array.isArray(rows) ? rows.map((row) => ({
       id: Number(row.id || 0),
       username: String(row.username || ''),
@@ -992,7 +1082,6 @@ async function updateAdminApplicationStatus(req, res) {
     await ensureApplicationsSchema();
 
     const table = getApplicationsTableName();
-    const pool = getApplicationsPool();
     const updateSql = `
       UPDATE \`${table}\`
       SET status = ?
@@ -1000,7 +1089,7 @@ async function updateAdminApplicationStatus(req, res) {
       LIMIT 1
     `;
 
-    const [result] = await pool.execute(updateSql, [status, id]);
+    const [result] = await executeApplicationsQuery(updateSql, [status, id]);
     if (!Number(result?.affectedRows || 0)) {
       return res.status(404).json({ error: 'Application not found.' });
     }
@@ -1012,7 +1101,7 @@ async function updateAdminApplicationStatus(req, res) {
       LIMIT 1
     `;
 
-    const [rows] = await pool.execute(fetchSql, [id]);
+    const [rows] = await executeApplicationsQuery(fetchSql, [id]);
     const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
     if (!row) {
       return res.status(404).json({ error: 'Application not found after update.' });
