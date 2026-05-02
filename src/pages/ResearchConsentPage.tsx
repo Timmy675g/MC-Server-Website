@@ -233,12 +233,12 @@ export default function ResearchConsentPage() {
         <Button
           type="button"
           variant="primary"
-          onClick={() => navigate('/apply')}
+          onClick={() => navigate('/')}
           disabled={!hasReachedBottom}
         >
-          Continue to Registration
+          I Agree, Return Home
         </Button>
-        <p className="meta">Scroll to the end of this document to enable registration.</p>
+        <p className="meta">Scroll to the end of this document to enable agreement.</p>
       </article>
     </main>
   );

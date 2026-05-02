@@ -10,7 +10,6 @@ import { isAdminAuthenticated } from './lib/auth';
 import HomePage from './pages/HomePage';
 
 const GuidePage = lazy(() => import('./pages/GuidePage'));
-const ApplyPage = lazy(() => import('./pages/ApplyPage'));
 const NewsPage = lazy(() => import('./pages/NewsPage'));
 const NewsArticlePage = lazy(() => import('./pages/NewsArticlePage'));
 const PlayersPage = lazy(() => import('./pages/PlayersPage'));
@@ -145,7 +144,6 @@ async function preloadCriticalAssets() {
 function preloadRoutes() {
   return Promise.allSettled([
     import('./pages/GuidePage'),
-    import('./pages/ApplyPage'),
     import('./pages/NewsPage'),
     import('./pages/FactionsPage'),
     import('./pages/RulesPage'),
@@ -274,9 +272,8 @@ function App() {
         <Route element={<SiteLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/join" element={<GuidePage />} />
-          <Route path="/apply" element={<ApplyPage />} />
-          <Route path="/index" element={<ApplyPage />} />
-          <Route path="/index.html" element={<ApplyPage />} />
+          <Route path="/index" element={<HomePage />} />
+          <Route path="/index.html" element={<HomePage />} />
           <Route path="/news" element={<NewsPage />} />
           <Route path="/news/:id" element={<NewsArticlePage />} />
           <Route path="/stats" element={<StatsPage />} />

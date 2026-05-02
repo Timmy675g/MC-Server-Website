@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
+import { Check, Copy } from 'lucide-react';
 import { getStatus, getUptime } from '../lib/api';
 import { assetUrl } from '../lib/asset-url';
-import { CURRENT_FACTION_ITEMS, NEWS_ITEMS, formatDate } from '../lib/content';
+import { CURRENT_FACTION_ITEMS, NEWS_ITEMS, PREVIOUS_FACTION_ITEMS, formatDate } from '../lib/content';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
@@ -31,7 +32,7 @@ export default function HomePage() {
     [],
   );
   const [typingIndex, setTypingIndex] = useState(0);
-  const [typingValue, setTypingValue] = useState(typingWords[0]);
+  const [typingValue, setTypingValue] = useState('');
   const [railIndex, setRailIndex] = useState(0);
   const [railResetToken, setRailResetToken] = useState(0);
   const [isRailPaused, setIsRailPaused] = useState(false);
@@ -74,35 +75,65 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (liteMode) return;
+    if (liteMode) {
+      // In lite mode, just show the first phrase statically.
+      setTypingValue(typingWords[typingIndex] ?? '');
+      return;
+    }
 
-    const text = typingWords[typingIndex];
+    const text = typingWords[typingIndex] ?? '';
     let frame = 0;
     let deleting = false;
+    let cancelled = false;
+    let timerId: number | null = null;
+
+    // Reset visible value when this cycle begins so we never
+    // briefly render the previous word's leftover characters.
+    setTypingValue('');
+
+    const schedule = (delay: number) => {
+      if (cancelled) return;
+      timerId = window.setTimeout(tick, delay);
+    };
 
     const tick = () => {
+      if (cancelled) return;
+
       if (!deleting) {
         frame += 1;
         setTypingValue(text.slice(0, frame));
+
         if (frame >= text.length) {
           deleting = true;
-          window.setTimeout(tick, 1100);
+          schedule(1100); // pause at full word
           return;
         }
+
+        schedule(52);
       } else {
         frame -= 1;
         setTypingValue(text.slice(0, Math.max(frame, 0)));
+
         if (frame <= 0) {
+          // Advance to next word; this effect will re-run with the new index.
           setTypingIndex((value) => (value + 1) % typingWords.length);
           return;
         }
-      }
 
-      window.setTimeout(tick, deleting ? 34 : 52);
+        schedule(34);
+      }
     };
 
-    const timer = window.setTimeout(tick, 220);
-    return () => window.clearTimeout(timer);
+    // Initial delay before the first character appears.
+    schedule(220);
+
+    return () => {
+      cancelled = true;
+      if (timerId !== null) {
+        window.clearTimeout(timerId);
+        timerId = null;
+      }
+    };
   }, [liteMode, typingIndex, typingWords]);
 
   useEffect(() => {
@@ -207,6 +238,7 @@ export default function HomePage() {
         label: 'Status',
         value: liveStatus,
         className: statusTone(status?.status ?? ''),
+        tooltip: 'Live server status — Operational means the server is online and accepting connections.',
       },
       {
         label: 'Current Players',
@@ -215,11 +247,13 @@ export default function HomePage() {
             ? `${status.playersOnline} / ${status.playersMax}`
             : '-- / --',
         className: '',
+        tooltip: 'Players currently online out of the maximum player cap.',
       },
       {
         label: 'Factions',
         value: `${CURRENT_FACTION_ITEMS.length}`,
         className: '',
+        tooltip: 'Number of active factions in the current server season.',
       },
       {
         label: 'Uptime',
@@ -227,11 +261,13 @@ export default function HomePage() {
           ? `${uptime.uptimePercent.toFixed(2)}%`
           : '--',
         className: 'uptime-good',
+        tooltip: 'Percentage of time the server has been online over the last 90 days.',
       },
       {
         label: 'Location',
         value: '🇸🇬 Singapore',
         className: '',
+        tooltip: 'Server hosted in Singapore for low-latency connections across Southeast Asia.',
       },
     ];
   }, [status, uptime]);
@@ -285,7 +321,10 @@ export default function HomePage() {
     setRailResetToken((value) => value + 1);
   };
 
-  const registeredPlayers = 50;
+  const topFactions = useMemo(
+    () => [...PREVIOUS_FACTION_ITEMS].sort((a, b) => b.power - a.power).slice(0, 3),
+    [],
+  );
 
   return (
     <>
@@ -323,31 +362,78 @@ export default function HomePage() {
         <div className="hero-grid">
           <div>
             <p className="eyebrow">Made by DNDGroup</p>
-            <h1 data-typing-list="SurvivalKendy Minecraft Server|War or Peace Situations|Creativity, Strategy, Community.">{typingValue}</h1>
+            <h2 className="home-typing-headline" data-typing-list="SurvivalKendy Minecraft Server|War or Peace Situations|Creativity, Strategy, Community.">{typingValue}</h2>
             <p className="subtitle">&quot;A server where creativity and strategy matter&quot;</p>
             {error ? <p className="meta">{error}</p> : null}
             <div className="button-group">
               <Button asChild variant="primary" className="shadcn-glow home-cta-btn">
-                <Link to="/join">JOIN NOW</Link>
+                <Link to="/join">Join Now</Link>
               </Button>
-              <Button asChild variant="default" className="home-cta-btn">
-                <Link to="/news">READ THE NEWS</Link>
+              <Button asChild variant="default" className="home-cta-btn home-cta-btn--secondary">
+                <Link to="/news">Read the News</Link>
               </Button>
-              <Button asChild variant="outline" className="home-cta-btn">
-                <Link to="/rules">VIEW RULES</Link>
+              <Button asChild variant="outline" className="home-cta-btn home-cta-btn--tertiary">
+                <Link to="/rules">View Rules</Link>
               </Button>
             </div>
           </div>
-          <div className="hero-image-card">
-            <img src={assetUrl('/assets/icon.png')} alt="Minecraft server icon" decoding="async" fetchPriority="high" />
-            <p className="hero-caption">A picture of our server icon!</p>
-          </div>
+          <Card className="home-server-card shadcn-card-lift" aria-label="How to join SurvivalKendy">
+            <div className="home-server-card-head">
+              <img
+                src={assetUrl('/assets/icon.png')}
+                alt=""
+                aria-hidden="true"
+                className="home-server-card-icon"
+                decoding="async"
+                fetchPriority="high"
+              />
+              <div className="home-server-card-meta">
+                <span className="home-server-card-label">Java &amp; Bedrock</span>
+                <strong className="home-server-card-name">SurvivalKendy</strong>
+                <span className="home-server-card-tagline">Open community server</span>
+              </div>
+            </div>
+            <div className="home-server-card-ip-block copy-ip-container">
+              <span className="home-server-card-ip-label">Play Now</span>
+              <div
+                className="ip-copy-box"
+                onClick={(e) => {
+                  navigator.clipboard.writeText('play.survivalkendy.systems');
+                  const target = e.currentTarget;
+                  target.classList.add('copied');
+                  setTimeout(() => target.classList.remove('copied'), 2000);
+                }}
+                title="Click to copy IP"
+                role="button"
+                tabIndex={0}
+              >
+                <div className="ip-text-wrap">
+                  <span className="ip-text">play.survivalkendy.systems</span>
+                </div>
+                <span className="ip-copy-indicator" aria-hidden="true">
+                  <Copy size={16} className="icon-copy" />
+                  <Check size={16} className="icon-check" />
+                </span>
+              </div>
+              <p className="home-server-card-ip-note">No whitelist required. Copy the IP address and hop right in!</p>
+            </div>
+          </Card>
         </div>
 
-        <div className="stats-grid" id="home-live-stats">
+        <div className="stats-grid home-redesign-stats" id="home-live-stats">
           {cards.map((card, index) => (
-            <Card key={card.label} className="stat-box shadcn-card-lift" style={{ animationDelay: `${index * 80}ms` }}>
-              <span className="stat-label">{card.label}</span>
+            <Card
+              key={card.label}
+              className="stat-box shadcn-card-lift"
+              style={{ animationDelay: `${index * 80}ms` }}
+              title={card.tooltip}
+            >
+              <span className="stat-label">
+                {card.label}
+                {card.tooltip && (
+                  <span className="stat-tooltip-icon" aria-label={card.tooltip}>(?)</span>
+                )}
+              </span>
               <span className={`stat-value ${card.className}`}>{card.value}</span>
             </Card>
           ))}
@@ -355,31 +441,36 @@ export default function HomePage() {
       </header>
 
       <section className="container reveal in-view section">
+        <p className="home-section-eyebrow">Why SurvivalKendy</p>
         <h2>What Makes Us Different</h2>
-        <div className="card-grid four-up">
-          <Card className="card feature-card shadcn-card-lift">
-            <h3>Experienced Owner And Maintainer</h3>
-            <p>The owner has extensive experience in managing and maintaining Minecraft servers, ensuring a smooth and enjoyable experience for all players.</p>
+        <div className="home-features-bento">
+          <Card className="home-features-card home-features-card--accent shadcn-card-lift">
+            <span className="home-features-icon" aria-hidden="true">🛠️</span>
+            <h3>Experienced Ownership</h3>
+            <p>Run by operators with deep experience managing and maintaining Minecraft servers — so your sessions stay smooth.</p>
           </Card>
-          <Card className="card feature-card shadcn-card-lift">
+          <Card className="home-features-card shadcn-card-lift">
+            <span className="home-features-icon" aria-hidden="true">📰</span>
             <h3>Community-Driven News</h3>
-            <p>Community-driven news coverage documenting server events as they unfold.</p>
+            <p>In-server events are documented as they unfold — wars, alliances, betrayals, all written by the community.</p>
           </Card>
-          <Card className="card feature-card shadcn-card-lift">
+          <Card className="home-features-card home-features-card--wide shadcn-card-lift">
+            <span className="home-features-icon" aria-hidden="true">⚡</span>
             <h3>Professional Infrastructure</h3>
-            <ul>
-              <li>Avg 15ms ping</li>
-              <li>Avg 19 TPS</li>
-              <li>Live uptime shown on Home, Stats, and Uptime pages</li>
-              <li>DigitalOcean C4D with 4 vCPU</li>
-              <li>8GB DDR4 RAM ( 2,933 MHz )</li>
-              <li>80 GB SSD Storage</li>
-              <li>Up to 30 Players support</li>
+            <p className="home-features-card-lead">Hosted on dedicated cloud hardware with live monitoring on every page.</p>
+            <ul className="home-features-specs">
+              <li><strong>~15 ms</strong><span>avg ping</span></li>
+              <li><strong>19 TPS</strong><span>steady tick rate</span></li>
+              <li><strong>4 vCPU</strong><span>DigitalOcean C4D</span></li>
+              <li><strong>8 GB</strong><span>DDR4 @ 2933 MHz</span></li>
+              <li><strong>80 GB</strong><span>NVMe SSD storage</span></li>
+              <li><strong>30</strong><span>player capacity</span></li>
             </ul>
           </Card>
-          <Card className="card feature-card shadcn-card-lift">
+          <Card className="home-features-card shadcn-card-lift">
+            <span className="home-features-icon" aria-hidden="true">🌏</span>
             <h3>Diverse Community</h3>
-            <p>Gender inclusive, talent rich, lots of different teams and built from a school based social network.</p>
+            <p>Gender-inclusive, talent-rich, with a wide mix of teams rooted in a school-based social network.</p>
           </Card>
         </div>
       </section>
@@ -404,11 +495,13 @@ export default function HomePage() {
                   <button
                     key={item.id}
                     type="button"
+                    role="tab"
                     className={`news-rail-tab ${index === railIndex ? 'is-active' : ''} ${index === railIndex && !isRailPaused ? 'is-running' : ''}`.trim()}
                     onClick={() => goToNewsIndex(index)}
                     aria-selected={index === railIndex ? 'true' : 'false'}
+                    aria-label={item.title}
                   >
-                    <span>{item.id}</span>
+                    <span>{item.topic ?? item.id}</span>
                   </button>
                 ))}
               </div>
@@ -460,24 +553,29 @@ export default function HomePage() {
       </section>
 
       <section className="container reveal in-view section">
-        <h2>Quick Stats</h2>
-        <div className="card-grid four-up" id="quick-stats">
-          <Card className="card metric-card shadcn-card-lift">
-            <p>Online Players</p>
-            <h3>{status?.playersOnline ?? '--'}</h3>
-          </Card>
-          <Card className="card metric-card shadcn-card-lift">
-            <p>Total Factions</p>
-            <h3>{CURRENT_FACTION_ITEMS.length}</h3>
-          </Card>
-          <Card className="card metric-card shadcn-card-lift">
-            <p>Server Uptime</p>
-            <h3>{uptime?.uptimePercent !== null && uptime?.uptimePercent !== undefined ? `${uptime.uptimePercent.toFixed(2)}%` : '--'}</h3>
-          </Card>
-          <Card className="card metric-card shadcn-card-lift">
-            <p>Total Registered Players</p>
-            <h3>{registeredPlayers}</h3>
-          </Card>
+        <div className="section-head">
+          <div>
+            <p className="home-section-eyebrow">Notable Teams</p>
+            <h2>Factions to Know</h2>
+          </div>
+          <Link to="/factions" className="link-arrow">All factions -&gt;</Link>
+        </div>
+        <div className="home-factions-preview">
+          {topFactions.map((faction) => (
+            <Card key={faction.name} className="home-faction-card shadcn-card-lift">
+              <div className="home-faction-card-head">
+                <h3>{faction.name.replace(/:$/, '')}</h3>
+                <span className="home-faction-power" aria-label={`Power level ${faction.power}`}>
+                  PWR <strong>{faction.power}</strong>
+                </span>
+              </div>
+              <p className="home-faction-desc">{faction.description}</p>
+              <div className="home-faction-meta">
+                <span><span className="meta">Leader</span><strong>{faction.leader}</strong></span>
+                <span><span className="meta">Members</span><strong>{faction.members}</strong></span>
+              </div>
+            </Card>
+          ))}
         </div>
       </section>
     </>

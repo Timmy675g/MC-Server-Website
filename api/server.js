@@ -956,6 +956,31 @@ async function submitApplication(req, res) {
     await ensureApplicationsSchema();
 
     const table = getApplicationsTableName();
+
+    // Reject duplicate submissions for the same username unless the
+    // most recent application was Declined (in which case the user is
+    // allowed to re-apply). Otherwise admin decisions on the earlier
+    // row would be overwritten by a stale Pending duplicate appearing
+    // "newer" in lookups.
+    const existingSql = `
+      SELECT id, status
+      FROM \`${table}\`
+      WHERE username = ?
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `;
+    const [existingRows] = await executeApplicationsQuery(existingSql, [username]);
+    const existing = Array.isArray(existingRows) && existingRows.length > 0 ? existingRows[0] : null;
+    const existingStatus = String(existing?.status || '').toLowerCase();
+
+    if (existing && existingStatus !== 'declined') {
+      return res.status(409).json({
+        error: `An application for "${username}" already exists with status "${existing.status}". Please wait for it to be reviewed, or contact an admin.`,
+        status: existing.status,
+        id: Number(existing.id || 0),
+      });
+    }
+
     const sql = `
       INSERT INTO \`${table}\` (username, discord_tag, grade, school, invited_by, reason, agreement_confirmed)
       VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -993,11 +1018,28 @@ async function getApplicationStatus(req, res) {
     await autoWaitlist();
 
     const table = getApplicationsTableName();
+
+    // Resolve the most authoritative status for the username instead of
+    // just the newest row. If the same username has multiple rows (e.g.
+    // legacy duplicates from before the duplicate-submission block was
+    // added), an admin's decision on an earlier row should not be
+    // hidden by a stale Pending row created later.
+    //
+    // Priority order: Accepted > Waitlist > Declined > Pending > other.
     const sql = `
       SELECT username, discord_tag, status, created_at
       FROM \`${table}\`
       WHERE username = ?
-      ORDER BY created_at DESC, id DESC
+      ORDER BY
+        CASE LOWER(status)
+          WHEN 'accepted' THEN 1
+          WHEN 'waitlist' THEN 2
+          WHEN 'declined' THEN 3
+          WHEN 'pending'  THEN 4
+          ELSE 5
+        END ASC,
+        created_at DESC,
+        id DESC
       LIMIT 1
     `;
 
@@ -1082,14 +1124,32 @@ async function updateAdminApplicationStatus(req, res) {
     await ensureApplicationsSchema();
 
     const table = getApplicationsTableName();
-    const updateSql = `
-      UPDATE \`${table}\`
-      SET status = ?
+
+    // First, fetch the target row so we can also propagate the status
+    // change to any duplicate rows that exist for the same username.
+    const targetSql = `
+      SELECT id, username
+      FROM \`${table}\`
       WHERE id = ?
       LIMIT 1
     `;
+    const [targetRows] = await executeApplicationsQuery(targetSql, [id]);
+    const targetRow = Array.isArray(targetRows) && targetRows.length > 0 ? targetRows[0] : null;
+    if (!targetRow) {
+      return res.status(404).json({ error: 'Application not found.' });
+    }
 
-    const [result] = await executeApplicationsQuery(updateSql, [status, id]);
+    // Update the targeted row plus any sibling rows for the same
+    // username so legacy duplicates are kept in sync. This prevents
+    // a stale Pending duplicate from masking an admin decision in
+    // public status lookups.
+    const updateSql = `
+      UPDATE \`${table}\`
+      SET status = ?
+      WHERE username = ?
+    `;
+
+    const [result] = await executeApplicationsQuery(updateSql, [status, targetRow.username]);
     if (!Number(result?.affectedRows || 0)) {
       return res.status(404).json({ error: 'Application not found.' });
     }

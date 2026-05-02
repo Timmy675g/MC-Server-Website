@@ -96,12 +96,57 @@
   letter-spacing: 0.015em;
 }
 
+/* On mobile: only the primary CTA is full-width.
+   Secondary and tertiary CTAs sit side-by-side in a smaller row. */
 @media (max-width: 760px) {
   .home-cta-btn {
     min-width: 0;
-    width: 100%;
     padding-inline: 1.25rem !important;
   }
+
+  .home-cta-btn:not(.home-cta-btn--secondary):not(.home-cta-btn--tertiary) {
+    width: 100%;
+  }
+
+  .button-group:has(.home-cta-btn--secondary) {
+    flex-wrap: wrap;
+  }
+
+  .home-cta-btn--secondary,
+  .home-cta-btn--tertiary {
+    flex: 1 1 calc(50% - 0.4rem);
+    font-size: 0.9rem !important;
+    padding-inline: 0.85rem !important;
+    min-height: 2.4rem;
+    justify-content: center;
+  }
+}
+
+/* Server card apply button */
+.home-server-card-ip-block {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid rgba(11, 95, 255, 0.18);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(11, 95, 255, 0.05), rgba(11, 95, 255, 0.02));
+  margin-top: 0.25rem;
+}
+
+.home-server-card-ip-note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #4a5f79;
+  line-height: 1.5;
+}
+
+:root[data-theme='dark'] .home-server-card-ip-note {
+  color: #8ba8cc;
+}
+
+.home-server-card-apply-btn {
+  width: fit-content;
+  margin-top: 0.2rem;
 }
 
 .apply-form {

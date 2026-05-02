@@ -14,10 +14,10 @@ export default function GuidePage() {
       <h1>How To Join</h1>
 
       <article className="card">
-        <h3>Apply</h3>
-        <p>Apply to our email to get whitelisted! Click the link down below to go to the apply page!</p>
+        <h3>Join Server</h3>
+        <p>You can directly join the server with the IP address below—no application or whitelist required.</p>
         <p className="card-actions">
-          <Link className="btn btn-secondary" to="/apply">Go To Application Form</Link>
+          <span className="btn btn-secondary" style={{ userSelect: 'all' }}>play.survivalkendy.systems</span>
         </p>
       </article>
 

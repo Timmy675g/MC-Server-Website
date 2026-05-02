@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
+import { Moon, Sun, Menu, X } from 'lucide-react';
 import { applyTheme, getInitialTheme } from '../lib/theme';
 import { apiUrl } from '../lib/api-base';
 import { unwrapPayload } from '../lib/api-envelope';
@@ -38,6 +39,26 @@ export function Navbar() {
     document.body.classList.toggle('nav-open-mobile', open);
     return () => document.body.classList.remove('nav-open-mobile');
   }, [open]);
+
+  // Auto-close the mobile menu and any open dropdowns on navigation.
+  // Without this, body.nav-open-mobile (which sets overflow:hidden +
+  // touch-action:none) can persist after route change, making the new
+  // page un-scrollable / un-swipeable.
+  useEffect(() => {
+    setOpen(false);
+    setOpenDropdown(null);
+    setStatsOpen(false);
+    setHoverLockCount(0);
+    document.body.classList.remove('nav-open-mobile');
+  }, [location.pathname]);
+
+  // Final safety net: ensure the scroll-lock class is never left behind
+  // if the Navbar somehow unmounts while open.
+  useEffect(() => {
+    return () => {
+      document.body.classList.remove('nav-open-mobile');
+    };
+  }, []);
 
   useEffect(() => {
     applyTheme(theme);
@@ -151,25 +172,28 @@ export function Navbar() {
         <span className="brand-kendy">Kendy</span>
       </NavLink>
 
-      <button
-        type="button"
-        className={`theme-toggle-btn ${isTogglingTheme ? 'is-toggling' : ''}`}
-        onClick={toggleTheme}
-        aria-label="Toggle theme"
-      >
-        {theme === 'dark' ? 'LIGHT MODE' : 'DARK MODE'}
-      </button>
+      <div className="nav-controls">
+        <button
+          type="button"
+          className={`theme-toggle-btn ${isTogglingTheme ? 'is-toggling' : ''}`}
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label="Toggle theme"
+        >
+          {theme === 'dark' ? <Sun size={18} strokeWidth={2.5} /> : <Moon size={18} strokeWidth={2.5} />}
+        </button>
 
-      <button
-        type="button"
-        className="mobile-menu-btn"
-        onClick={() => setOpen((value) => !value)}
-        aria-label="Toggle navigation"
-        aria-expanded={open}
-        aria-controls="nav-links"
-      >
-        ☰
-      </button>
+        <button
+          type="button"
+          className="mobile-menu-btn"
+          onClick={() => setOpen((value) => !value)}
+          aria-label="Toggle navigation"
+          aria-expanded={open}
+          aria-controls="nav-links"
+        >
+          {open ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </div>
 
       <div id="nav-links" className={`nav-links ${open ? 'open' : ''}`}>
         <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')}>Home</NavLink>
@@ -228,20 +252,20 @@ export function Navbar() {
         ))}
 
         <NavLink to="/news" className={({ isActive }) => (isActive ? 'active' : '')}>News</NavLink>
-        <NavLink to="/join" className={({ isActive }) => (isActive ? 'active' : '')}>Guide</NavLink>
-        <NavLink to="/apply" className={({ isActive }) => (isActive ? 'active nav-join-apply-link' : 'nav-join-apply-link')}>Apply</NavLink>
+        <NavLink to="/join" className={({ isActive }) => (isActive ? 'active' : '')}>Join</NavLink>
       </div>
 
       <div className={`nav-stats ${statsOpen && !statsBlocked ? 'open' : ''} ${statsBlocked ? 'is-disabled' : ''}`}>
         <button
           type="button"
           className="nav-stats-btn"
-          aria-label="Toggle live stats"
+          aria-label="Toggle live stats panel"
           aria-expanded={statsOpen && !statsBlocked}
           disabled={statsBlocked}
           onClick={() => setStatsOpen((value) => !value)}
         >
-          <span>▲</span>
+          <span className="nav-stats-btn-icon">▲</span>
+          <span className="nav-stats-btn-label">Live Stats</span>
         </button>
         <div className="nav-stats-panel" role="region" aria-label="Live server stats">
           <div className="nav-stats-grid">
