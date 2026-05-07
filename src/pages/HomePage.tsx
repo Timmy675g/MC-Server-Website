@@ -7,6 +7,7 @@ import { CURRENT_FACTION_ITEMS, NEWS_ITEMS, PREVIOUS_FACTION_ITEMS, formatDate }
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { CountdownTimer } from '../components/CountdownTimer';
 import type { ServerStatus, UptimeStats } from '../types/api';
 
 const NEWS_ROTATE_MS = 6200;
@@ -358,6 +359,13 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section className="container reveal in-view countdown-section countdown-hero-placement">
+        <CountdownTimer 
+          eventName="Server Grand Opening Tracker" 
+          targetDate="2026-05-10T15:00:00+07:00" 
+        />
+      </section>
+
       <header className="hero container reveal in-view" id="home-content">
         <div className="hero-grid">
           <div>
@@ -446,31 +454,31 @@ export default function HomePage() {
         <div className="home-features-bento">
           <Card className="home-features-card home-features-card--accent shadcn-card-lift">
             <span className="home-features-icon" aria-hidden="true">🛠️</span>
-            <h3>Experienced Ownership</h3>
-            <p>Run by operators with deep experience managing and maintaining Minecraft servers — so your sessions stay smooth.</p>
+            <h3>No BS Hosting</h3>
+            <p>We've been running Minecraft servers for long enough to know what works. Expect zero lag blocks, minimal downtime, and admins who actually play the game.</p>
           </Card>
           <Card className="home-features-card shadcn-card-lift">
             <span className="home-features-icon" aria-hidden="true">📰</span>
-            <h3>Community-Driven News</h3>
-            <p>In-server events are documented as they unfold — wars, alliances, betrayals, all written by the community.</p>
+            <h3>Player-Written Lore</h3>
+            <p>Every war, alliance, and betrayal gets recorded by the players. You literally write the server's history as it happens using our custom website integrations.</p>
           </Card>
-          <Card className="home-features-card home-features-card--wide shadcn-card-lift">
+          <Card className="home-features-card shadcn-card-lift">
             <span className="home-features-icon" aria-hidden="true">⚡</span>
-            <h3>Professional Infrastructure</h3>
-            <p className="home-features-card-lead">Hosted on dedicated cloud hardware with live monitoring on every page.</p>
+            <h3>Beefy Hardware</h3>
+            <p className="home-features-card-lead">Hosted on heavy-duty cloud infrastructure because nobody likes rubberbanding.</p>
             <ul className="home-features-specs">
               <li><strong>~15 ms</strong><span>avg ping</span></li>
-              <li><strong>19 TPS</strong><span>steady tick rate</span></li>
-              <li><strong>4 vCPU</strong><span>DigitalOcean C4D</span></li>
-              <li><strong>8 GB</strong><span>DDR4 @ 2933 MHz</span></li>
-              <li><strong>80 GB</strong><span>NVMe SSD storage</span></li>
-              <li><strong>30</strong><span>player capacity</span></li>
+              <li><strong>20 TPS</strong><span>steady tick rate</span></li>
+              <li><strong>4 vCPU</strong><span>Dedicated</span></li>
+              <li><strong>8 GB</strong><span>RAM</span></li>
+              <li><strong>80 GB</strong><span>NVMe Storage</span></li>
+              <li><strong>30</strong><span>player cap</span></li>
             </ul>
           </Card>
           <Card className="home-features-card shadcn-card-lift">
             <span className="home-features-icon" aria-hidden="true">🌏</span>
-            <h3>Diverse Community</h3>
-            <p>Gender-inclusive, talent-rich, with a wide mix of teams rooted in a school-based social network.</p>
+            <h3>Tight-knit Community</h3>
+            <p>A thriving group of friends, builders, and strategists. No arbitrary toxicity or random griefers—just people having a genuinely good time together.</p>
           </Card>
         </div>
       </section>
