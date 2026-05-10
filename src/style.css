@@ -5419,3 +5419,29 @@ body.is-scrolled .navbar {
         opacity: 1;
     }
 }
+
+/* Timer Message Styling */
+.countdown-timer-header-container {
+    margin-bottom: 1.75rem;
+}
+
+.countdown-timer-header-container .countdown-timer-header {
+    margin-bottom: 0.5rem;
+}
+
+.countdown-message {
+    font-size: 0.95rem;
+    color: #ef4444;
+    font-weight: 500;
+    margin: 0;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+@media (max-width: 600px) {
+    .countdown-timer-header-container {
+        margin-bottom: 1rem;
+    }
+    .countdown-message {
+        font-size: 0.8rem;
+    }
+}

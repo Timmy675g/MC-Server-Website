@@ -5,9 +5,10 @@ import { Clock } from 'lucide-react';
 interface CountdownTimerProps {
   targetDate: string;
   eventName: string;
+  message?: string;
 }
 
-export function CountdownTimer({ targetDate, eventName }: CountdownTimerProps) {
+export function CountdownTimer({ targetDate, eventName, message }: CountdownTimerProps) {
   const [timeLeft, setTimeLeft] = useState(() => calculateTimeLeft(targetDate));
 
   useEffect(() => {
@@ -57,9 +58,12 @@ export function CountdownTimer({ targetDate, eventName }: CountdownTimerProps) {
 
   return (
     <Card className="countdown-timer-card shadcn-card-lift">
-      <div className="countdown-timer-header">
-        <Clock className="countdown-icon pulse-anim" />
-        <h3>{eventName}</h3>
+      <div className="countdown-timer-header-container">
+        <div className="countdown-timer-header">
+          <Clock className="countdown-icon pulse-anim" />
+          <h3>{eventName}</h3>
+        </div>
+        {message && <p className="countdown-message">{message}</p>}
       </div>
       <div className="countdown-grid">
         <div className="countdown-item">

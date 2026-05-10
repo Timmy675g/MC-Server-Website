@@ -362,7 +362,8 @@ export default function HomePage() {
       <section className="container reveal in-view countdown-section countdown-hero-placement">
         <CountdownTimer 
           eventName="Server Grand Opening Tracker" 
-          targetDate="2026-05-10T15:00:00+07:00" 
+          targetDate="2026-05-10T19:30:00+07:00" 
+          message="Due to Unfinished Features, Server Opening has been Delayed to 7:30 PM"
         />
       </section>
 
