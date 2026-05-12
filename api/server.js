@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { io } from 'socket.io-client';
 import { status as statusJava, statusBedrock } from 'minecraft-server-util';
@@ -14,6 +13,18 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 console.log('DB_NAME Check:', process.env.DB_NAME ? 'Found' : 'NOT FOUND');
 
 const app = express();
+
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 function envString(name, fallback) {
   const safeFallback = typeof fallback === 'string' ? fallback : '';
@@ -46,17 +57,6 @@ function getClientIp(req) {
 // Cloudflare + reverse-proxy safe. Express will honor forwarded headers,
 // while rate-limit keyGenerator below prioritizes CF-Connecting-IP.
 app.set('trust proxy', true);
-
-app.use(cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-}));
-app.options('*', cors({
-  origin: true,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-}));
 
 app.use(express.json());
 
