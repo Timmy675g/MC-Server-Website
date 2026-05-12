@@ -13,11 +13,12 @@ dotenv.config({ path: path.resolve(__dirname, '.env') });
 console.log('DB_NAME Check:', process.env.DB_NAME ? 'Found' : 'NOT FOUND');
 
 const app = express();
+app.set('trust proxy', 1);
 
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
 
   if (req.method === 'OPTIONS') {
@@ -56,7 +57,6 @@ function getClientIp(req) {
 
 // Cloudflare + reverse-proxy safe. Express will honor forwarded headers,
 // while rate-limit keyGenerator below prioritizes CF-Connecting-IP.
-app.set('trust proxy', true);
 
 app.use(express.json());
 
