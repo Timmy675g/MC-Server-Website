@@ -48,18 +48,10 @@ function getClientIp(req) {
 // while rate-limit keyGenerator below prioritizes CF-Connecting-IP.
 app.set('trust proxy', true);
 
-const limiter = rateLimit({
-  windowMs: envNumber('RATE_LIMIT_WINDOW_MS', 1 * 120 * 1000),
-  limit: envNumber('RATE_LIMIT_LIMIT', 100),
-  message: 'Too many requests, slow down!',
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => getClientIp(req),
-});
-
-app.use(limiter);
-
-const allowedOrigins = envString('CORS_ORIGINS', 'https://survivalkendy.systems,https://www.survivalkendy.systems')
+const allowedOrigins = envString(
+  'CORS_ORIGINS',
+  'https://survivalkendy.systems,https://status.survivalkendy.systems,https://api.survivalkendy.systems',
+)
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean);
@@ -77,6 +69,18 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+
+const limiter = rateLimit({
+  windowMs: envNumber('RATE_LIMIT_WINDOW_MS', 1 * 120 * 1000),
+  limit: envNumber('RATE_LIMIT_LIMIT', 100),
+  message: 'Too many requests, slow down!',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientIp(req),
+  skip: (req) => req.method === 'OPTIONS',
+});
+
+app.use(limiter);
 
 const PORT = envNumber('PORT', 3001);
 const MC_SERVER_HOST = envString('MC_SERVER_HOST', 'play.survivalkendy.systems');
