@@ -74,6 +74,7 @@ app.use(limiter);
 
 const PORT = envNumber('PORT', 3001);
 const MC_SERVER_HOST = envString('MC_SERVER_HOST', 'play.survivalkendy.systems');
+const SERVER_IP = envString('SERVER_IP', '167.71.220.58');
 const MC_SERVER_PORT = envNumber('MC_SERVER_PORT', 25565);
 const BEDROCK_PORT = envNumber('BEDROCK_PORT', 19132);
 const UPTIME_KUMA_STATUS_PAGE_URL = envString('UPTIME_KUMA_STATUS_PAGE_URL', '');
@@ -502,6 +503,42 @@ async function fetchJson(url, timeoutMs = 6000) {
   }
 }
 
+function normalizeStatusFromMcstatus(data) {
+  const online = Boolean(data?.online);
+  const playersOnline = Number(data?.players?.online ?? 0);
+  const playersMax = Number(data?.players?.max ?? 0);
+
+  return {
+    status: online ? 'online' : 'offline',
+    playersOnline,
+    playersMax,
+    uptime: 0,
+    javaPing: null,
+    bedrockPing: null,
+    version: data?.version?.name || data?.version?.name_clean || undefined,
+    software: data?.software || undefined,
+    java: {
+      online,
+      port: MC_SERVER_PORT,
+      playersOnline,
+      playersMax,
+      ping: null,
+    },
+    bedrock: {
+      online: false,
+      port: BEDROCK_PORT,
+      playersOnline: 0,
+      playersMax: 0,
+      ping: null,
+    },
+  };
+}
+
+async function fetchMcstatusStatus() {
+  const url = `https://api.mcstatus.io/v2/status/java/${SERVER_IP}`;
+  return fetchJson(url, STATUS_PROBE_TIMEOUT_MS);
+}
+
 function normalizePlayers(javaData) {
   const list = Array.isArray(javaData?.players?.sample) ? javaData.players.sample : [];
   return list.map((item) => ({
@@ -676,35 +713,24 @@ function summarizeUptime(timeline) {
 async function getLiveStatus() {
   if (cachedStatus && nowMs() - cachedStatusAt < STATUS_CACHE_TTL_MS) return cachedStatus;
 
-  const [javaRes, bedrockRes] = await Promise.allSettled([
-    probeJavaStatus(),
-    probeBedrockStatus(),
-  ]);
+  try {
+    const mcstatusData = await fetchMcstatusStatus();
+    const normalized = normalizeStatusFromMcstatus(mcstatusData);
 
-  const javaData = javaRes.status === 'fulfilled' ? javaRes.value : null;
-  const bedrockProbe = bedrockRes.status === 'fulfilled' ? bedrockRes.value : null;
-  const bedrockData = bedrockProbe?.data ?? null;
-  const bedrockPingMs = bedrockProbe?.ping ?? null;
+    cachedStatus = {
+      ...normalized,
+      players: [],
+      source: 'mcstatus.io',
+    };
+    cachedStatusAt = nowMs();
 
-  if (!javaData && !bedrockData) {
-    const javaReason = javaRes.status === 'rejected' ? String(javaRes.reason?.message || javaRes.reason || 'Java status failed') : '';
-    const bedrockReason = bedrockRes.status === 'rejected' ? String(bedrockRes.reason?.message || bedrockRes.reason || 'Bedrock status failed') : '';
-    const offline = buildOfflineStatus(`Unable to fetch both Java and Bedrock status. ${javaReason} ${bedrockReason}`.trim());
+    return cachedStatus;
+  } catch (error) {
+    const offline = buildOfflineStatus(String(error?.message || error || 'mcstatus.io status failed'));
     cachedStatus = offline;
     cachedStatusAt = nowMs();
     return offline;
   }
-
-  const normalized = normalizeStatusFromSettled(javaData, bedrockData, bedrockPingMs);
-
-  cachedStatus = {
-    ...normalized,
-    players: normalizePlayers(javaData),
-    source: 'minecraft-server-util',
-  };
-  cachedStatusAt = nowMs();
-
-  return cachedStatus;
 }
 
 async function getLiveUptime(range = '30d') {
