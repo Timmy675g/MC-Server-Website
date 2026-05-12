@@ -24,7 +24,9 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(`Request failed: ${response.status} for ${url}`);
   }
 
-  return response.json() as Promise<T>;
+  const data = await response.json() as T;
+  console.log('API Response:', data);
+  return data;
 }
 
 function withCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {

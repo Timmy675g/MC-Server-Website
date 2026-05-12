@@ -68,6 +68,7 @@ export default function PlayersPage() {
       })
       .then((raw) => {
         if (!mounted) return;
+        console.log('API Response:', raw);
         const data = unwrapPayload<PlayersResponse>(raw, {
           status: 'offline',
           source: 'fallback',

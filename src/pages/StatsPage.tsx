@@ -89,6 +89,7 @@ export default function StatsPage() {
 
         const statusData = await statusResponse.json() as ApiEnvelope<StatusPayload> | StatusPayload;
         const uptimeData = await uptimeResponse.json() as ApiEnvelope<UptimePayload> | UptimePayload;
+        console.log('API Response:', { status: statusData, uptime: uptimeData });
 
         if (!mounted) return;
 

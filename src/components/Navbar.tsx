@@ -98,6 +98,7 @@ export function Navbar() {
 
         if (!response.ok) return;
         const raw = await response.json();
+        console.log('API Response:', raw);
         const data = unwrapPayload<ServerStatus>(raw, {
           status: 'offline',
           playersOnline: 0,
