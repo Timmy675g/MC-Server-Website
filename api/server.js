@@ -47,42 +47,16 @@ function getClientIp(req) {
 // while rate-limit keyGenerator below prioritizes CF-Connecting-IP.
 app.set('trust proxy', true);
 
-const allowedOrigins = [
-  'https://survivalkendy.systems',
-  'https://www.survivalkendy.systems',
-  'https://status.survivalkendy.systems',
-  'https://api.survivalkendy.systems',
-];
-
-const corsOptionsDelegate = (req, callback) => {
-  console.log('DEBUG CORS - Origin:', req.headers.origin);
-  const origin = req.headers.origin;
-
-  if (!origin) {
-    callback(null, {
-      origin: true,
-      methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Accept', 'Admin-Secret'],
-      credentials: true,
-    });
-    return;
-  }
-
-  if (allowedOrigins.includes(origin)) {
-    callback(null, {
-      origin: true,
-      methods: ['GET', 'POST', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Accept', 'Admin-Secret'],
-      credentials: true,
-    });
-    return;
-  }
-
-  callback(new Error('CORS blocked origin'));
-};
-
-app.use(cors(corsOptionsDelegate));
-app.options('*', cors(corsOptionsDelegate));
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+}));
+app.options('*', cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+}));
 
 app.use(express.json());
 
