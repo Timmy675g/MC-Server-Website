@@ -14,19 +14,14 @@ const NewsPage = lazy(() => import('./pages/NewsPage'));
 const NewsArticlePage = lazy(() => import('./pages/NewsArticlePage'));
 const PlayersPage = lazy(() => import('./pages/PlayersPage'));
 const StatsPage = lazy(() => import('./pages/StatsPage'));
-const UptimePage = lazy(() => import('./pages/UptimePage'));
 const FactionsPage = lazy(() => import('./pages/FactionsPage'));
 const RulesPage = lazy(() => import('./pages/RulesPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const AdminPage = lazy(() => import('./pages/AdminPage'));
-const ResearchConsentPage = lazy(() => import('./pages/ResearchConsentPage'));
-const TermsFairPlayPage = lazy(() => import('./pages/TermsFairPlayPage'));
 
-const MIN_BOOT_MS = 260;
-// Ping-pong uses alternate direction, so one full left->right->left cycle is 2x duration.
-const PING_PONG_FULL_CYCLE_MS = 2800;
+const MIN_BOOT_MS = 900;
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -132,13 +127,19 @@ function preloadVideoMetadata(src: string): Promise<void> {
 }
 
 async function preloadCriticalAssets() {
-  const newsThumbs = NEWS_ITEMS.slice(0, 4).map((item) => preloadImage(assetUrl(item.thumbnail)));
+  const constrainedDevice = isMobileConstrainedDevice();
+  const newsThumbs = NEWS_ITEMS.slice(0, constrainedDevice ? 1 : 4).map((item) => preloadImage(assetUrl(item.thumbnail)));
 
-  await Promise.allSettled([
+  const tasks = [
     preloadImage(assetUrl('/assets/icon.png')),
-    preloadVideoMetadata(assetUrl('/assets/Video.mp4')),
     ...newsThumbs,
-  ]);
+  ];
+
+  if (!constrainedDevice) {
+    tasks.push(preloadVideoMetadata(assetUrl('/assets/Video.mp4')));
+  }
+
+  await Promise.allSettled(tasks);
 }
 
 function preloadRoutes() {
@@ -149,11 +150,8 @@ function preloadRoutes() {
     import('./pages/RulesPage'),
     import('./pages/AboutPage'),
     import('./pages/EventsPage'),
-    import('./pages/ResearchConsentPage'),
-    import('./pages/TermsFairPlayPage'),
     import('./pages/PlayersPage'),
     import('./pages/StatsPage'),
-    import('./pages/UptimePage'),
     import('./pages/NewsArticlePage'),
   ]);
 }
@@ -214,19 +212,12 @@ function App() {
     const constrainedDevice = isMobileConstrainedDevice();
 
     const runBoot = async () => {
-      const bootStartedAt = performance.now();
-
       // Block initial boot on truly critical dependencies so we do not show a blank
       // page after loader dismissal on slower networks.
       await Promise.allSettled([
-        withTimeout(warmHomeCritical(), constrainedDevice ? 5200 : 3600),
+        withTimeout(warmHomeCritical(), constrainedDevice ? 12000 : 9000),
         delay(constrainedDevice ? 140 : MIN_BOOT_MS),
       ]);
-
-      // Keep non-critical work deferred to idle after critical readiness.
-      scheduleIdleTask(() => {
-        void preloadRoutes();
-      }, constrainedDevice ? 2200 : 1200);
 
       scheduleIdleTask(() => {
         void preloadCriticalAssets();
@@ -234,21 +225,18 @@ function App() {
 
       await waitForNextPaint();
 
-      const elapsedMs = performance.now() - bootStartedAt;
-      if (elapsedMs < PING_PONG_FULL_CYCLE_MS) {
-        await delay(PING_PONG_FULL_CYCLE_MS - elapsedMs);
-      }
-
       if (!mounted) return;
       setBooting(false);
 
-      scheduleIdleTask(() => {
-        prefetchApiInBackground();
-      }, 1000);
+      if (!constrainedDevice) {
+        scheduleIdleTask(() => {
+          prefetchApiInBackground();
+        }, 1000);
 
-      scheduleIdleTask(() => {
-        prefetchRoutes();
-      }, constrainedDevice ? 2800 : 1800);
+        scheduleIdleTask(() => {
+          prefetchRoutes();
+        }, 1800);
+      }
     };
 
     void runBoot();
@@ -277,14 +265,9 @@ function App() {
           <Route path="/news" element={<NewsPage />} />
           <Route path="/news/:id" element={<NewsArticlePage />} />
           <Route path="/stats" element={<StatsPage />} />
-          <Route path="/uptime" element={<UptimePage />} />
           <Route path="/players" element={<PlayersPage />} />
           <Route path="/factions" element={<FactionsPage />} />
           <Route path="/rules" element={<RulesPage />} />
-          <Route path="/research-consent" element={<ResearchConsentPage />} />
-          <Route path="/research-consent.html" element={<ResearchConsentPage />} />
-          <Route path="/terms-fair-play" element={<TermsFairPlayPage />} />
-          <Route path="/terms-fair-play.html" element={<TermsFairPlayPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/login" element={<LoginPage />} />

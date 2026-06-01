@@ -1,16 +1,45 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy } from 'lucide-react';
-import { getStatus, getUptime } from '../lib/api';
+import { Activity, AlertTriangle, Archive, Check, Copy, ExternalLink, ShieldAlert } from 'lucide-react';
 import { assetUrl } from '../lib/asset-url';
 import { CURRENT_FACTION_ITEMS, NEWS_ITEMS, PREVIOUS_FACTION_ITEMS, formatDate } from '../lib/content';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
-import { CountdownTimer } from '../components/CountdownTimer';
-import type { ServerStatus, UptimeStats } from '../types/api';
+import { usePollingStatus } from '../hooks/usePollingStatus';
+import { MotionReveal } from '../components/MotionReveal';
 
 const NEWS_ROTATE_MS = 6200;
+const SERVER_IP = 'play.survivalkendy.systems';
+const STATUS_PAGE_URL = import.meta.env.VITE_STATUS_PAGE_URL || 'https://status.survivalkendy.systems';
+const INCIDENT_PORTAL_URL = import.meta.env.VITE_INCIDENT_PORTAL_URL || 'https://tickets.survivalkendy.systems';
+const ARCHIVE_SITE_URL = 'https://archive.survivalkendy.systems';
+const ARCHIVE_SHUTDOWN_TARGET = '2026-06-02T20:00:00+07:00';
+
+type ArchiveCountdownState = {
+  totalMs: number;
+  days: string;
+  hours: string;
+  minutes: string;
+  seconds: string;
+};
+
+function getArchiveCountdownState(): ArchiveCountdownState {
+  const remaining = Math.max(0, new Date(ARCHIVE_SHUTDOWN_TARGET).getTime() - Date.now());
+  const totalSeconds = Math.floor(remaining / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return {
+    totalMs: remaining,
+    days: String(days),
+    hours: String(hours).padStart(2, '0'),
+    minutes: String(minutes).padStart(2, '0'),
+    seconds: String(seconds).padStart(2, '0'),
+  };
+}
 
 function statusTone(status: string): string {
   if (status === 'online') return 'status-online';
@@ -24,10 +53,56 @@ function statusLabel(status: string): 'Operational' | 'Maintenance' | 'Down' {
   return 'Down';
 }
 
+function SplitFlapCountdown() {
+  const [countdown, setCountdown] = useState<ArchiveCountdownState>(() => getArchiveCountdownState());
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setCountdown(getArchiveCountdownState());
+    }, 1000);
+
+    return () => window.clearInterval(id);
+  }, []);
+
+  if (countdown.totalMs <= 0) {
+    return (
+      <div className="archive-splitflap-fallback" role="status" aria-live="polite">
+        Server Shutdown In Progress
+      </div>
+    );
+  }
+
+  const segments = [
+    { label: 'Days', value: countdown.days },
+    { label: 'Hours', value: countdown.hours },
+    { label: 'Minutes', value: countdown.minutes },
+    { label: 'Seconds', value: countdown.seconds },
+  ];
+
+  return (
+    <div className="archive-splitflap" role="timer" aria-live="polite" aria-label="Server shutdown countdown">
+      {segments.map((segment) => (
+        <div className="archive-splitflap-segment" key={segment.label}>
+          <span className="archive-splitflap-tile" aria-hidden="true">
+            <span className="archive-splitflap-value" key={segment.value}>{segment.value}</span>
+          </span>
+          <span className="archive-splitflap-label">{segment.label}</span>
+          <span className="sr-only">{segment.value} {segment.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function HomePage() {
-  const [status, setStatus] = useState<ServerStatus | null>(null);
-  const [uptime, setUptime] = useState<UptimeStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    status,
+    isLoading: isStatusLoading,
+    isError: isStatusError,
+    isStale: isStatusStale,
+    lastUpdatedLabel,
+    lastError,
+  } = usePollingStatus();
   const typingWords = useMemo(
     () => ['SurvivalKendy Minecraft Server', 'War or Peace Situations', 'Creativity, Strategy, Community.'],
     [],
@@ -39,6 +114,7 @@ export default function HomePage() {
   const [isRailPaused, setIsRailPaused] = useState(false);
   const [railAnim, setRailAnim] = useState<'swipe-left' | 'swipe-right'>('swipe-left');
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const liteMode = useMemo(() => {
     const nav = navigator as Navigator & {
       connection?: { saveData?: boolean };
@@ -54,25 +130,6 @@ export default function HomePage() {
     const lowCpu = typeof nav.hardwareConcurrency === 'number' && nav.hardwareConcurrency <= 6;
 
     return coarsePointer || narrowScreen || reduceMotion || saveData || lowMemory || lowCpu;
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    Promise.all([getStatus(), getUptime()])
-      .then(([statusData, uptimeData]) => {
-        if (!mounted) return;
-        setStatus(statusData);
-        setUptime(uptimeData);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setError('Live data is temporarily unavailable.');
-      });
-
-    return () => {
-      mounted = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -156,11 +213,11 @@ export default function HomePage() {
     };
 
     if (liteMode) {
-      video.addEventListener('loadeddata', tryPlay);
-      tryPlay();
-      return () => {
-        video.removeEventListener('loadeddata', tryPlay);
-      };
+      video.pause();
+      video.removeAttribute('src');
+      video.querySelectorAll('source').forEach((source) => source.removeAttribute('src'));
+      video.load();
+      return;
     }
 
     const onUserGesture = () => tryPlay();
@@ -234,11 +291,20 @@ export default function HomePage() {
 
   const cards = useMemo(() => {
     const liveStatus = statusLabel(status?.status ?? 'offline');
+    const bestPing = [status?.javaPing, status?.bedrockPing]
+      .filter((value): value is number => Number.isFinite(Number(value)))
+      .sort((a, b) => a - b)[0];
+    const tpsMspt = status?.tps !== null && status?.tps !== undefined
+      ? `${Number(status.tps).toFixed(1)} TPS`
+      : status?.mspt !== null && status?.mspt !== undefined
+        ? `${Math.round(Number(status.mspt))} MSPT`
+        : '--';
+
     return [
       {
         label: 'Status',
-        value: liveStatus,
-        className: statusTone(status?.status ?? ''),
+        value: isStatusLoading && !status ? 'Loading' : liveStatus,
+        className: `${statusTone(status?.status ?? '')} ${isStatusStale ? 'is-stale-value' : ''}`.trim(),
         tooltip: 'Live server status — Operational means the server is online and accepting connections.',
       },
       {
@@ -251,18 +317,22 @@ export default function HomePage() {
         tooltip: 'Players currently online out of the maximum player cap.',
       },
       {
+        label: 'Latency',
+        value: bestPing !== undefined ? `${Math.round(bestPing)} ms` : '--',
+        className: '',
+        tooltip: 'Lowest available Java or Bedrock ping from the latest status poll.',
+      },
+      {
+        label: 'TPS / MSPT',
+        value: tpsMspt,
+        className: '',
+        tooltip: 'Server TPS or MSPT if the status API exposes it.',
+      },
+      {
         label: 'Factions',
         value: `${CURRENT_FACTION_ITEMS.length}`,
         className: '',
         tooltip: 'Number of active factions in the current server season.',
-      },
-      {
-        label: 'Uptime',
-        value: uptime?.uptimePercent !== null && uptime?.uptimePercent !== undefined
-          ? `${uptime.uptimePercent.toFixed(2)}%`
-          : '--',
-        className: 'uptime-good',
-        tooltip: 'Percentage of time the server has been online over the last 90 days.',
       },
       {
         label: 'Location',
@@ -271,7 +341,19 @@ export default function HomePage() {
         tooltip: 'Server hosted in Singapore for low-latency connections across Southeast Asia.',
       },
     ];
-  }, [status, uptime]);
+  }, [isStatusLoading, isStatusStale, status]);
+
+  const statusDescription = isStatusLoading && !status
+    ? 'Checking live server data...'
+    : isStatusError
+      ? 'Live checks are failing. Last known data remains visible.'
+      : isStatusStale
+        ? 'Data is older than expected. The last known values are still shown.'
+        : status?.status === 'online'
+          ? 'Server is responding to live status probes.'
+          : status?.status === 'maintenance'
+            ? 'Maintenance mode is active.'
+            : 'Server is currently reporting offline.';
 
   const recentNews = useMemo(
     () => [...NEWS_ITEMS].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 4),
@@ -281,6 +363,7 @@ export default function HomePage() {
   useEffect(() => {
     if (recentNews.length <= 1) return;
     if (isRailPaused) return;
+    if (liteMode) return;
 
     const id = window.setTimeout(() => {
       setRailAnim('swipe-left');
@@ -288,10 +371,11 @@ export default function HomePage() {
     }, NEWS_ROTATE_MS);
 
     return () => window.clearTimeout(id);
-  }, [recentNews.length, railIndex, railResetToken, isRailPaused]);
+  }, [recentNews.length, railIndex, railResetToken, isRailPaused, liteMode]);
 
   useEffect(() => {
-    const preload = recentNews.map((item) => {
+    const preloadItems = liteMode ? recentNews.slice(0, 1) : recentNews;
+    const preload = preloadItems.map((item) => {
       const image = new Image();
       image.decoding = 'async';
       image.src = assetUrl(item.thumbnail);
@@ -303,7 +387,7 @@ export default function HomePage() {
         image.src = '';
       });
     };
-  }, [recentNews]);
+  }, [recentNews, liteMode]);
 
   const activeNews = recentNews[railIndex] ?? null;
 
@@ -326,9 +410,56 @@ export default function HomePage() {
     () => [...PREVIOUS_FACTION_ITEMS].sort((a, b) => b.power - a.power).slice(0, 3),
     [],
   );
+  const copyServerIp = async () => {
+    try {
+      await navigator.clipboard.writeText(SERVER_IP);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+
+    window.setTimeout(() => setCopyState('idle'), 2400);
+  };
 
   return (
     <>
+      <section className="archive-mode-banner" aria-labelledby="archive-mode-title">
+        <div className="archive-mode-card container">
+          <div className="archive-mode-icon" aria-hidden="true">
+            <Archive size={24} />
+          </div>
+
+          <div className="archive-mode-copy">
+            <div className="archive-mode-meta">
+              <span className="archive-mode-badge">Archive Mode</span>
+              <span className="archive-mode-countdown">Server shutdown planned: Tomorrow</span>
+            </div>
+            <h2 id="archive-mode-title">SurvivalKendy Has Entered Archive Mode</h2>
+            <p>
+              Due to current funding and infrastructure limitations, SurvivalKendy is currently in Archive Mode.
+              The Minecraft server is scheduled to shut down tomorrow unless a sustainable hosting solution becomes available.
+            </p>
+            <SplitFlapCountdown />
+            <div className="archive-mode-preserving" aria-label="Archive preservation list">
+              <span>World downloads</span>
+              <span>Screenshots and memories</span>
+              <span>Project documentation</span>
+              <span>Infrastructure notes</span>
+            </div>
+            <p className="archive-mode-note">
+              The archive website is now being prepared and will become the permanent home of the project's history.
+            </p>
+          </div>
+
+          <div className="archive-mode-actions">
+            <a className="archive-mode-primary" href={ARCHIVE_SITE_URL}>
+              Visit Archive Website
+              <ExternalLink size={16} aria-hidden="true" />
+            </a>
+          </div>
+        </div>
+      </section>
+
       <section className="home-intro" aria-label="Intro video">
         <video className="home-intro-video" autoPlay muted loop playsInline preload="metadata" poster={assetUrl('/assets/icon.png')}>
           <source src={assetUrl('/assets/Video.mp4')} type="video/mp4" />
@@ -359,22 +490,19 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="container reveal in-view countdown-section countdown-hero-placement">
-        <CountdownTimer 
-          eventName="Server Grand Opening Tracker" 
-          targetDate="2026-05-10T19:30:00+07:00" 
-          message="Due to Unfinished Features, Server Opening has been Delayed to 7:30 PM"
-        />
-      </section>
-
-      <header className="hero container reveal in-view" id="home-content">
-        <div className="hero-grid">
-          <div>
-            <p className="eyebrow">Made by DNDGroup</p>
+      <header className="hero home-command-center container reveal in-view" id="home-content">
+        <div className="hero-grid home-command-grid">
+          <div className="home-command-copy">
+            <p className="eyebrow">Server Command Center</p>
             <h2 className="home-typing-headline" data-typing-list="SurvivalKendy Minecraft Server|War or Peace Situations|Creativity, Strategy, Community.">{typingValue}</h2>
-            <p className="subtitle">&quot;A server where creativity and strategy matter&quot;</p>
-            {error ? <p className="meta">{error}</p> : null}
-            <div className="button-group">
+            <p className="subtitle">Live connection details, server health, and the fastest path into SurvivalKendy.</p>
+            <div className={`live-status-strip ${isStatusStale ? 'is-stale' : ''} ${isStatusError ? 'is-error' : ''}`} role="status" aria-live="polite">
+              <span className="live-status-dot" aria-hidden="true" />
+              <strong>{isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : status?.status === 'offline' ? 'Offline' : 'Live'}</strong>
+              <span>Last updated {lastUpdatedLabel}</span>
+              {isStatusError ? <span>{lastError || 'Live data is temporarily unavailable.'}</span> : null}
+            </div>
+            <div className="button-group home-command-actions">
               <Button asChild variant="primary" className="shadcn-glow home-cta-btn">
                 <Link to="/join">Join Now</Link>
               </Button>
@@ -405,66 +533,105 @@ export default function HomePage() {
             <div className="home-server-card-ip-block copy-ip-container">
               <span className="home-server-card-ip-label">Play Now</span>
               <div
-                className="ip-copy-box"
-                onClick={(e) => {
-                  navigator.clipboard.writeText('play.survivalkendy.systems');
-                  const target = e.currentTarget;
-                  target.classList.add('copied');
-                  setTimeout(() => target.classList.remove('copied'), 2000);
+                className={`ip-copy-box ${copyState === 'copied' ? 'copied' : ''} ${copyState === 'failed' ? 'copy-failed' : ''}`.trim()}
+                onClick={copyServerIp}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    void copyServerIp();
+                  }
                 }}
                 title="Click to copy IP"
                 role="button"
                 tabIndex={0}
+                aria-label="Copy SurvivalKendy server IP"
               >
                 <div className="ip-text-wrap">
-                  <span className="ip-text">play.survivalkendy.systems</span>
+                  <span className="ip-text">{SERVER_IP}</span>
                 </div>
                 <span className="ip-copy-indicator" aria-hidden="true">
                   <Copy size={16} className="icon-copy" />
                   <Check size={16} className="icon-check" />
                 </span>
               </div>
-              <p className="home-server-card-ip-note">No whitelist required. Copy the IP address and hop right in!</p>
+              <p className="home-server-card-ip-note" role="status" aria-live="polite">
+                {copyState === 'copied'
+                  ? 'IP copied. Open Minecraft, add SurvivalKendy, and join.'
+                  : copyState === 'failed'
+                    ? 'Copy failed. Select the IP and copy it manually.'
+                    : 'No whitelist required. Copy the IP address and hop right in!'}
+              </p>
             </div>
           </Card>
         </div>
 
         <div className="stats-grid home-redesign-stats" id="home-live-stats">
           {cards.map((card, index) => (
-            <Card
-              key={card.label}
-              className="stat-box shadcn-card-lift"
-              style={{ animationDelay: `${index * 80}ms` }}
-              title={card.tooltip}
-            >
-              <span className="stat-label">
-                {card.label}
-                {card.tooltip && (
-                  <span className="stat-tooltip-icon" aria-label={card.tooltip}>(?)</span>
-                )}
-              </span>
-              <span className={`stat-value ${card.className}`}>{card.value}</span>
-            </Card>
+            <MotionReveal key={card.label} className="stat-motion-card" delay={index * 0.035}>
+              <Card
+                className={`stat-box shadcn-card-lift ${status?.status === 'offline' ? 'is-offline-card' : ''} ${isStatusStale ? 'is-stale-card' : ''} ${isStatusError ? 'is-error-card' : ''}`.trim()}
+                style={{ animationDelay: `${index * 80}ms` }}
+                title={card.tooltip}
+              >
+                <span className="stat-label">
+                  {card.label}
+                  {card.tooltip && (
+                    <span className="stat-tooltip-icon" aria-label={card.tooltip}>(?)</span>
+                  )}
+                </span>
+                <span className={`stat-value ${card.className}`}>{card.value}</span>
+              </Card>
+            </MotionReveal>
           ))}
         </div>
+
+        <MotionReveal className="status-actions-grid" delay={0.1}>
+          <Card className={`status-action-card ${isStatusError ? 'is-error-card' : isStatusStale ? 'is-stale-card' : ''}`.trim()}>
+            <div className="status-action-icon" aria-hidden="true">
+              {isStatusError ? <AlertTriangle size={18} /> : <Activity size={18} />}
+            </div>
+            <div>
+              <p className="status-action-label">Live Status</p>
+              <h3>{isStatusStale ? 'Last Known Data' : 'Server Health'}</h3>
+              <p className="meta">{statusDescription}</p>
+            </div>
+            <a className="link-arrow status-action-link" href={STATUS_PAGE_URL} target="_blank" rel="noreferrer">
+              Status Page <ExternalLink size={14} aria-hidden="true" />
+            </a>
+          </Card>
+
+          <Card className="status-action-card">
+            <div className="status-action-icon" aria-hidden="true">
+              <ShieldAlert size={18} />
+            </div>
+            <div>
+              <p className="status-action-label">Operations</p>
+              <h3>Incident Portal</h3>
+              <p className="meta">Review maintenance controls and incident context.</p>
+            </div>
+            <a className="link-arrow status-action-link" href={INCIDENT_PORTAL_URL} target="_blank" rel="noreferrer">
+              Open Portal <ExternalLink size={14} aria-hidden="true" />
+            </a>
+          </Card>
+        </MotionReveal>
       </header>
 
       <section className="container reveal in-view section">
         <p className="home-section-eyebrow">Why SurvivalKendy</p>
         <h2>What Makes Us Different</h2>
         <div className="home-features-bento">
-          <Card className="home-features-card home-features-card--accent shadcn-card-lift">
-            <span className="home-features-icon" aria-hidden="true">🛠️</span>
+          <MotionReveal className="home-features-motion home-features-motion--accent"><Card className="home-features-card home-features-card--accent shadcn-card-lift">
+            <span className="home-features-icon" aria-hidden="true">OPS</span>
             <h3>No BS Hosting</h3>
             <p>We've been running Minecraft servers for long enough to know what works. Expect zero lag blocks, minimal downtime, and admins who actually play the game.</p>
-          </Card>
-          <Card className="home-features-card shadcn-card-lift">
-            <span className="home-features-icon" aria-hidden="true">📰</span>
+          </Card></MotionReveal>
+          <MotionReveal className="home-features-motion" delay={0.04}><Card className="home-features-card shadcn-card-lift">
+            <span className="home-features-icon" aria-hidden="true">LOG</span>
             <h3>Player-Written Lore</h3>
             <p>Every war, alliance, and betrayal gets recorded by the players. You literally write the server's history as it happens using our custom website integrations.</p>
-          </Card>
-          <Card className="home-features-card shadcn-card-lift">
-            <span className="home-features-icon" aria-hidden="true">⚡</span>
+          </Card></MotionReveal>
+          <MotionReveal className="home-features-motion home-features-motion--specs" delay={0.08}><Card className="home-features-card shadcn-card-lift">
+            <span className="home-features-icon" aria-hidden="true">TPS</span>
             <h3>Beefy Hardware</h3>
             <p className="home-features-card-lead">Hosted on heavy-duty cloud infrastructure because nobody likes rubberbanding.</p>
             <ul className="home-features-specs">
@@ -475,12 +642,12 @@ export default function HomePage() {
               <li><strong>80 GB</strong><span>NVMe Storage</span></li>
               <li><strong>30</strong><span>player cap</span></li>
             </ul>
-          </Card>
-          <Card className="home-features-card shadcn-card-lift">
-            <span className="home-features-icon" aria-hidden="true">🌏</span>
+          </Card></MotionReveal>
+          <MotionReveal className="home-features-motion" delay={0.12}><Card className="home-features-card shadcn-card-lift">
+            <span className="home-features-icon" aria-hidden="true">SEA</span>
             <h3>Tight-knit Community</h3>
             <p>A thriving group of friends, builders, and strategists. No arbitrary toxicity or random griefers—just people having a genuinely good time together.</p>
-          </Card>
+          </Card></MotionReveal>
         </div>
       </section>
 

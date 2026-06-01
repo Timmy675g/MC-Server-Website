@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Moon, Sun, Menu, X } from 'lucide-react';
+import { ChevronDown, Moon, Sun, Menu, X } from 'lucide-react';
 import { applyTheme, getInitialTheme } from '../lib/theme';
-import { apiUrl } from '../lib/api-base';
-import { unwrapPayload } from '../lib/api-envelope';
-import type { ServerStatus } from '../types/api';
+import { usePollingStatus } from '../hooks/usePollingStatus';
 
 const infoItems = [
   { to: '/about', label: 'About' },
@@ -16,7 +14,6 @@ const infoItems = [
 const statusItems = [
   { to: '/players', label: 'Players' },
   { to: '/stats', label: 'Stats' },
-  { to: '/uptime', label: 'Uptime' },
 ];
 
 const mobileCollapsedItems = [...infoItems, { to: '/login', label: 'Login' }, ...statusItems];
@@ -28,7 +25,13 @@ export function Navbar() {
   const [theme, setTheme] = useState<'dark' | 'light'>(() => getInitialTheme());
   const [isTogglingTheme, setIsTogglingTheme] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
-  const [serverData, setServerData] = useState<ServerStatus[]>([]);
+  const {
+    status: liveStatus,
+    isLoading: isStatusLoading,
+    isError: isStatusError,
+    isStale: isStatusStale,
+    lastUpdatedLabel,
+  } = usePollingStatus();
   const location = useLocation();
   const statsBlocked = openDropdown !== null || hoverLockCount > 0;
 
@@ -78,75 +81,11 @@ export function Navbar() {
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-    let inFlight = false;
-
-    const pullStatus = async () => {
-      if (inFlight) return;
-      if (typeof document !== 'undefined' && document.hidden) return;
-
-      inFlight = true;
-      try {
-        const response = await fetch(apiUrl('/status'), {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-          mode: 'cors',
-          credentials: 'omit',
-          cache: 'no-store',
-        });
-
-        if (!response.ok) return;
-        const raw = await response.json();
-        console.log('API Response:', raw);
-        const data = unwrapPayload<ServerStatus>(raw, {
-          status: 'offline',
-          playersOnline: 0,
-          playersMax: 0,
-          uptime: 0,
-          javaPing: null,
-          bedrockPing: null,
-        });
-        if (!mounted) return;
-
-        const payload: ServerStatus = {
-          status: String(data?.status ?? 'offline'),
-          playersOnline: Number(data?.playersOnline ?? 0),
-          playersMax: Number(data?.playersMax ?? 0),
-          uptime: Number(data?.uptime ?? 0),
-          javaPing: Number.isFinite(Number(data?.javaPing)) ? Number(data.javaPing) : null,
-          bedrockPing: Number.isFinite(Number(data?.bedrockPing)) ? Number(data.bedrockPing) : null,
-          version: data?.version,
-          software: data?.software,
-        };
-
-        // Always replace with the latest payload so cards never multiply.
-        setServerData([payload]);
-      } catch {
-        // Ignore transient pull failures in navbar stats.
-      } finally {
-        inFlight = false;
-      }
-    };
-
-    void pullStatus();
-    const id = window.setInterval(() => {
-      void pullStatus();
-    }, 90000);
-
-    return () => {
-      mounted = false;
-      window.clearInterval(id);
-    };
-  }, []);
-
   const toggleTheme = () => {
     setIsTogglingTheme(true);
     window.setTimeout(() => setIsTogglingTheme(false), 360);
     setTheme((value) => (value === 'dark' ? 'light' : 'dark'));
   };
-
-  const liveStatus = serverData[0] ?? null;
 
   const javaPingText = liveStatus?.javaPing !== null && liveStatus?.javaPing !== undefined
     ? `${Math.round(liveStatus.javaPing)} ms`
@@ -157,6 +96,11 @@ export function Navbar() {
   const playerCountText = liveStatus
     ? `${liveStatus.playersOnline} / ${liveStatus.playersMax}`
     : '-- / --';
+  const navLiveLabel = isStatusLoading && !liveStatus
+    ? 'Loading'
+    : isStatusStale || isStatusError
+      ? 'Stale'
+      : 'Live';
 
   const onDropdownMouseEnter = () => {
     setHoverLockCount((value) => value + 1);
@@ -210,7 +154,8 @@ export function Navbar() {
             onClick={() => setOpenDropdown((value) => (value === 'info' ? null : 'info'))}
             aria-expanded={openDropdown === 'info'}
           >
-            Information ▼
+            <span>Information</span>
+            <ChevronDown className="nav-dropdown-chevron" size={16} aria-hidden="true" />
           </button>
           <div className="nav-dropdown-menu">
             {infoItems.map((item) => (
@@ -235,7 +180,8 @@ export function Navbar() {
             onClick={() => setOpenDropdown((value) => (value === 'status' ? null : 'status'))}
             aria-expanded={openDropdown === 'status'}
           >
-            Server Status ▼
+            <span>Server Status</span>
+            <ChevronDown className="nav-dropdown-chevron" size={16} aria-hidden="true" />
           </button>
           <div className="nav-dropdown-menu">
             {statusItems.map((item) => (
@@ -283,7 +229,9 @@ export function Navbar() {
               <strong className="nav-stats-value">{playerCountText}</strong>
             </div>
           </div>
-          <p className="nav-stats-note">Live probe via mcstatus.io with local API cache.</p>
+          <p className={`nav-stats-note ${isStatusStale || isStatusError ? 'is-stale' : ''}`}>
+            {navLiveLabel} · Last updated {lastUpdatedLabel}
+          </p>
         </div>
       </div>
     </nav>

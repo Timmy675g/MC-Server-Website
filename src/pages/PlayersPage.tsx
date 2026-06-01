@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { apiUrl } from '../lib/api-base';
-import { unwrapPayload } from '../lib/api-envelope';
+import { usePollingStatus } from '../hooks/usePollingStatus';
+import { MotionReveal } from '../components/MotionReveal';
 
 type Player = {
   username?: string;
@@ -50,69 +50,60 @@ function avatarChain(player: Player): string[] {
 }
 
 export default function PlayersPage() {
-  const [payload, setPayload] = useState<PlayersResponse | null>(null);
   const [servers, setServers] = useState<Player[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    status,
+    isLoading: isStatusLoading,
+    isError: isStatusError,
+    isStale: isStatusStale,
+    lastUpdatedLabel,
+    lastError,
+  } = usePollingStatus();
 
   useEffect(() => {
-    let mounted = true;
-
-    fetch(apiUrl('/players'), {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      cache: 'no-store',
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error(`Players request failed: ${response.status}`);
-        return response.json() as Promise<{ payload?: PlayersResponse } | PlayersResponse>;
-      })
-      .then((raw) => {
-        if (!mounted) return;
-        console.log('API Response:', raw);
-        const data = unwrapPayload<PlayersResponse>(raw, {
-          status: 'offline',
-          source: 'fallback',
-          playersOnline: 0,
-          playersMax: 0,
-          players: [],
-        });
-        setPayload(data);
-        setServers(Array.isArray(data?.players) ? data.players : []);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setError('Unable to fetch players right now.');
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    setServers(Array.isArray(status?.players) ? status.players : []);
+  }, [status?.players]);
 
   const players = servers;
+  const payload: PlayersResponse = {
+    status: status?.status,
+    source: status?.source,
+    playersOnline: status?.playersOnline,
+    playersMax: status?.playersMax,
+    players,
+  };
 
   return (
     <section className="container reveal in-view section">
       <article className="card" style={{ gridColumn: '1 / -1', marginBottom: '1rem' }}>
         <h1>Players</h1>
-        {error ? (
-          <p>{error}</p>
-        ) : (
-          <>
-            <p className="subtitle">
-              {payload?.status === 'online'
-                ? `Server online: ${payload?.playersOnline ?? 0} / ${payload?.playersMax ?? 0}`
-                : `Server offline. Last known: ${payload?.playersOnline ?? 0} / ${payload?.playersMax ?? 0}`}
-            </p>
-            <p className="meta">Source: {payload?.source ?? '--'}</p>
-          </>
-        )}
+        <p className="subtitle">
+          {payload?.status === 'online'
+            ? `Server online: ${payload?.playersOnline ?? 0} / ${payload?.playersMax ?? 0}`
+            : `Server offline. Last known: ${payload?.playersOnline ?? 0} / ${payload?.playersMax ?? 0}`}
+        </p>
+        <div className={`live-status-strip ${isStatusStale ? 'is-stale' : ''} ${isStatusError ? 'is-error' : ''}`} role="status" aria-live="polite">
+          <span className="live-status-dot" aria-hidden="true" />
+          <strong>{isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : 'Live'}</strong>
+          <span>Last updated {lastUpdatedLabel}</span>
+          {isStatusError ? <span>{lastError || 'Unable to fetch players right now.'}</span> : null}
+        </div>
+        <p className="meta">Source: {payload?.source ?? '--'}</p>
       </article>
 
       {players.length === 0 ? (
-        <article className="card players-empty">
-          No player names are currently exposed by upstream API.
-        </article>
+        <MotionReveal>
+          <article className={`card players-empty polished-empty-state ${isStatusError ? 'is-error-card' : ''}`.trim()}>
+            <strong>{isStatusLoading && !status ? 'Loading player names' : 'No player names available'}</strong>
+            <p className="meta">
+              {isStatusLoading && !status
+                ? 'Waiting for the live Minecraft status sample.'
+                : isStatusError
+                  ? lastError || 'Unable to refresh player data right now.'
+                  : 'The server is online, but the current status sample is not exposing player names.'}
+            </p>
+          </article>
+        </MotionReveal>
       ) : (
         <div className="card-grid players-grid">
           {players.map((player, index) => {
@@ -120,13 +111,14 @@ export default function PlayersPage() {
             const [first, ...fallback] = avatarChain(player);
 
             return (
-              <PlayerCard
-                key={`${username}-${index}`}
-                username={username}
-                uuid={pseudonymizeUuid(player.uuid)}
-                firstAvatar={first}
-                fallbackChain={fallback}
-              />
+              <MotionReveal key={`${username}-${index}`} className="player-motion-card" delay={index * 0.035}>
+                <PlayerCard
+                  username={username}
+                  uuid={pseudonymizeUuid(player.uuid)}
+                  firstAvatar={first}
+                  fallbackChain={fallback}
+                />
+              </MotionReveal>
             );
           })}
         </div>

@@ -1,27 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CURRENT_FACTION_ITEMS, PREVIOUS_FACTION_ITEMS } from '../lib/content';
-import { Badge } from '../components/ui/badge';
 import { Card } from '../components/ui/card';
-import { apiUrl } from '../lib/api-base';
-import { unwrapPayload } from '../lib/api-envelope';
-import type { ApiEnvelope } from '../types/api';
-
-type StatusPayload = {
-  playersOnline?: number;
-  playersMax?: number;
-  uptime?: number;
-  tps?: number | null;
-  cpuUsage?: number | null;
-  ramUsage?: number | null;
-};
-
-type UptimePayload = {
-  stats?: {
-    uptimePercent?: number;
-    incidentMinutes?: number;
-    incidentFreeStreakMinutes?: number;
-  };
-};
+import { usePollingStatus } from '../hooks/usePollingStatus';
+import { MotionReveal } from '../components/MotionReveal';
 
 type PlayerPoint = {
   t: number;
@@ -50,112 +31,78 @@ function pushHistory(value: number): PlayerPoint[] {
   return next.slice(-14);
 }
 
-function formatMinutesToHuman(minutes: number | undefined): string {
-  const safe = Number(minutes ?? 0);
-  if (!Number.isFinite(safe) || safe <= 0) return '0m';
-
-  const total = Math.floor(safe);
-  const days = Math.floor(total / 1440);
-  const hours = Math.floor((total % 1440) / 60);
-  const mins = total % 60;
-
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-}
-
-function uptimeText(value: number | undefined): string {
-  const safe = Number(value);
-  if (!Number.isFinite(safe)) return '--';
-  return `${safe.toFixed(2).replace(/\.00$/, '')}%`;
-}
-
 export default function StatsPage() {
-  const [uptime, setUptime] = useState<UptimePayload | null>(null);
   const [history, setHistory] = useState<PlayerPoint[]>([]);
-  const [error, setError] = useState<string | null>(null);
   const [factionServerView, setFactionServerView] = useState<'current' | 'previous'>('current');
+  const {
+    status,
+    isLoading: isStatusLoading,
+    isError: isStatusError,
+    isStale: isStatusStale,
+    lastUpdatedAt,
+    lastUpdatedLabel,
+    lastError,
+  } = usePollingStatus();
 
   useEffect(() => {
-    let mounted = true;
+    if (status && lastUpdatedAt) {
+      setHistory(pushHistory(status.playersOnline));
+      return;
+    }
 
-    Promise.all([
-      fetch(apiUrl('/status'), { headers: { Accept: 'application/json' } }),
-      fetch(apiUrl('/uptime?range=1d'), { headers: { Accept: 'application/json' } }),
-    ])
-      .then(async ([statusResponse, uptimeResponse]) => {
-        if (!statusResponse.ok) throw new Error('status failed');
-        if (!uptimeResponse.ok) throw new Error('uptime failed');
-
-        const statusData = await statusResponse.json() as ApiEnvelope<StatusPayload> | StatusPayload;
-        const uptimeData = await uptimeResponse.json() as ApiEnvelope<UptimePayload> | UptimePayload;
-        console.log('API Response:', { status: statusData, uptime: uptimeData });
-
-        if (!mounted) return;
-
-        const statusPayload = unwrapPayload<StatusPayload>(statusData, {
-          playersOnline: 0,
-          playersMax: 0,
-          uptime: 0,
-          tps: null,
-          cpuUsage: null,
-          ramUsage: null,
-        });
-        const uptimePayload = unwrapPayload<UptimePayload>(uptimeData, {
-          stats: {
-            uptimePercent: undefined,
-            incidentMinutes: 0,
-            incidentFreeStreakMinutes: 0,
-          },
-        });
-        setUptime(uptimePayload);
-        setHistory(pushHistory(Number(statusPayload.playersOnline ?? 0)));
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setError('Unable to load stats data right now.');
-        setHistory(loadHistory(14));
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
+    setHistory(loadHistory(14));
+  }, [lastUpdatedAt, status]);
 
   const ranking = useMemo(() => {
     const selected = factionServerView === 'current' ? CURRENT_FACTION_ITEMS : PREVIOUS_FACTION_ITEMS;
     return [...selected].sort((a, b) => b.power - a.power);
   }, [factionServerView]);
 
-  const maxPlayers = useMemo(() => {
-    if (history.length === 0) return 1;
-    return Math.max(...history.map((item) => item.value), 1);
-  }, [history]);
+  const chartMaxPlayers = useMemo(() => {
+    const sampleMax = history.length > 0 ? Math.max(...history.map((item) => item.value), 0) : 0;
+    return Math.max(status?.playersMax ?? 0, sampleMax, 1);
+  }, [history, status?.playersMax]);
 
   return (
     <main className="container section stack reveal in-view">
       <Card className="card" style={{ gridColumn: '1 / -1' }}>
         <h1>Stats Dashboard</h1>
-        <p className="subtitle">Live player trend, uptime health, and faction power ranking.</p>
-        {error ? <p>{error}</p> : null}
+        <p className="subtitle">Live player trend and faction power ranking.</p>
+        <div className={`live-status-strip ${isStatusStale ? 'is-stale' : ''} ${isStatusError ? 'is-error' : ''}`} role="status" aria-live="polite">
+          <span className="live-status-dot" aria-hidden="true" />
+          <strong>{isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : 'Live'}</strong>
+          <span>Last updated {lastUpdatedLabel}</span>
+          {isStatusError ? <span>{lastError || 'Unable to load stats data right now.'}</span> : null}
+        </div>
       </Card>
 
       <Card className="card" style={{ gridColumn: '1 / -1' }}>
-        <h3>Player Count (recent samples)</h3>
-        <div style={{ marginTop: '0.9rem', display: 'flex', height: '13rem', alignItems: 'end', gap: '0.5rem', overflowX: 'auto', border: '1px solid var(--line)', borderRadius: '10px', padding: '0.65rem' }}>
+        <div className="stats-chart-head">
+          <div>
+            <h3>Player Count</h3>
+            <p className="meta">Recent samples stored locally in this browser.</p>
+          </div>
+          <p className="stats-chart-current">
+            <span>Now</span>
+            <strong>{status?.playersOnline ?? '--'} / {status?.playersMax ?? '--'}</strong>
+          </p>
+        </div>
+        <div className="stats-player-chart">
           {history.length === 0 ? (
             <p className="meta">No samples yet.</p>
           ) : (
             history.map((point) => {
-              const height = Math.max(8, Math.round((point.value / maxPlayers) * 170));
+              const height = Math.max(8, Math.round((point.value / chartMaxPlayers) * 170));
               const label = new Date(point.t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
               return (
-                <div key={point.t} style={{ display: 'flex', minWidth: '2.5rem', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
+                <div key={point.t} className="stats-player-sample">
                   <div
-                    style={{ width: '1.7rem', borderRadius: '6px 6px 0 0', height, background: 'linear-gradient(180deg, #0b5fff, #26c5ff)' }}
+                    className="stats-player-bar"
+                    style={{ height }}
                     title={`${label} - ${point.value} players`}
                   />
+                  <strong>{point.value}</strong>
                   <span className="meta" style={{ fontSize: '0.65rem' }}>{label}</span>
                 </div>
               );
@@ -164,20 +111,7 @@ export default function StatsPage() {
         </div>
       </Card>
 
-      <section className="card-grid" style={{ gridColumn: '1 / -1' }}>
-        <Card className="card" style={{ gridColumn: '1 / -1' }}>
-          <h3>Uptime Statistics</h3>
-          <p style={{ marginTop: '0.35rem' }}><Badge variant="outline">24H RANGE</Badge></p>
-          <p className="stat-value">{uptimeText(uptime?.stats?.uptimePercent)}</p>
-          <p className="meta" style={{ marginTop: '0.5rem' }}>
-            No incident streak: {formatMinutesToHuman(uptime?.stats?.incidentFreeStreakMinutes)}
-          </p>
-          <p className="meta" style={{ marginTop: '0.2rem' }}>
-            Incident time in range: {formatMinutesToHuman(uptime?.stats?.incidentMinutes)}
-          </p>
-        </Card>
-      </section>
-
+      <MotionReveal className="full-grid-row">
       <Card className="card" style={{ gridColumn: '1 / -1' }}>
         <h3>Faction Power Rankings</h3>
         <div className="button-group" role="group" aria-label="Faction ranking server selector" style={{ marginTop: '0.6rem' }}>
@@ -198,20 +132,23 @@ export default function StatsPage() {
         </div>
         <div className="stack" style={{ marginTop: '0.7rem' }}>
           {ranking.length === 0 ? (
-            <Card className="card" style={{ gridColumn: '1 / -1' }}>
+            <Card className="card polished-empty-state" style={{ gridColumn: '1 / -1' }}>
               <p><strong>No faction data for current server.</strong></p>
               <p className="meta">Switch to Previous Server to view historical clan information.</p>
             </Card>
           ) : ranking.map((faction, index) => (
-            <Card key={faction.name} className="card" style={{ gridColumn: '1 / -1' }}>
-              <p><strong>#{index + 1} {faction.name}</strong></p>
-              <p>Power score: <b>{faction.power}</b></p>
-              <p className="meta">Leader: {faction.leader} | Members: {faction.members}</p>
-              <p className="meta">Allegiances: {faction.allegiances}</p>
-            </Card>
+            <MotionReveal key={faction.name} delay={index * 0.03}>
+              <Card className="card" style={{ gridColumn: '1 / -1' }}>
+                <p><strong>#{index + 1} {faction.name}</strong></p>
+                <p>Power score: <b>{faction.power}</b></p>
+                <p className="meta">Leader: {faction.leader} | Members: {faction.members}</p>
+                <p className="meta">Allegiances: {faction.allegiances}</p>
+              </Card>
+            </MotionReveal>
           ))}
         </div>
       </Card>
+      </MotionReveal>
     </main>
   );
 }

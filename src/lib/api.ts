@@ -1,18 +1,8 @@
-import type { ApiEnvelope, ServerStatus, UptimeStats } from '../types/api';
+import type { ApiEnvelope, ServerStatus } from '../types/api';
 import { apiUrl } from './api-base';
 import { unwrapPayload } from './api-envelope';
 
 const cache = new Map<string, Promise<unknown>>();
-
-type UptimeApiResponse = {
-  stats?: {
-    uptimePercent?: number | string | null;
-  };
-  current?: {
-    status?: string | null;
-    label?: string | null;
-  };
-};
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
@@ -24,9 +14,7 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(`Request failed: ${response.status} for ${url}`);
   }
 
-  const data = await response.json() as T;
-  console.log('API Response:', data);
-  return data;
+  return response.json() as Promise<T>;
 }
 
 function withCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
@@ -45,50 +33,46 @@ function withCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
 
 export function getStatus(): Promise<ServerStatus> {
   return withCache('status', async () => {
-    const data = await fetchJson<ApiEnvelope<ServerStatus> | ServerStatus>(apiUrl('/status'));
-    const payload = unwrapPayload<ServerStatus>(data, {
-      status: 'offline',
-      playersOnline: 0,
-      playersMax: 0,
-      uptime: 0,
-      javaPing: null,
-      bedrockPing: null,
-    });
-
-    return {
-      status: payload.status ?? 'offline',
-      playersOnline: Number(payload.playersOnline ?? 0),
-      playersMax: Number(payload.playersMax ?? 0),
-      uptime: Number(payload.uptime ?? 0),
-      javaPing: Number.isFinite(Number(payload.javaPing)) ? Number(payload.javaPing) : null,
-      bedrockPing: Number.isFinite(Number(payload.bedrockPing)) ? Number(payload.bedrockPing) : null,
-      version: payload.version,
-      software: payload.software,
-    };
+    return fetchStatus();
   });
 }
 
-export function getUptime(): Promise<UptimeStats> {
-  return withCache('uptime', async () => {
-    const data = await fetchJson<ApiEnvelope<UptimeApiResponse> | UptimeApiResponse>(apiUrl('/uptime?range=1d'));
-    const payload = unwrapPayload<UptimeApiResponse>(data, {
-      stats: { uptimePercent: null },
-      current: { status: 'unknown', label: 'Unknown' },
-    });
-    const uptimePercent = payload.stats?.uptimePercent;
-
-    return {
-      uptimePercent: Number.isFinite(Number(uptimePercent))
-        ? Number(uptimePercent)
-        : null,
-      currentStatus: String(payload?.current?.status ?? 'unknown'),
-      currentLabel: String(payload?.current?.label ?? 'Unknown'),
-    };
+export async function fetchStatus(): Promise<ServerStatus> {
+  const data = await fetchJson<ApiEnvelope<ServerStatus> | ServerStatus>(apiUrl('/status'));
+  const payload = unwrapPayload<ServerStatus>(data, {
+    status: 'offline',
+    playersOnline: 0,
+    playersMax: 0,
+    uptime: 0,
+    javaPing: null,
+    bedrockPing: null,
+    tps: null,
+    mspt: null,
+    players: [],
   });
+
+  return {
+    status: payload.status ?? 'offline',
+    playersOnline: Number(payload.playersOnline ?? 0),
+    playersMax: Number(payload.playersMax ?? 0),
+    uptime: Number(payload.uptime ?? 0),
+    javaPing: Number.isFinite(Number(payload.javaPing)) ? Number(payload.javaPing) : null,
+    bedrockPing: Number.isFinite(Number(payload.bedrockPing)) ? Number(payload.bedrockPing) : null,
+    tps: Number.isFinite(Number(payload.tps)) ? Number(payload.tps) : null,
+    mspt: Number.isFinite(Number(payload.mspt)) ? Number(payload.mspt) : null,
+    source: payload.source,
+    playerSampleAvailable: Boolean(payload.playerSampleAvailable),
+    players: Array.isArray(payload.players) ? payload.players : [],
+    version: payload.version,
+    software: payload.software,
+  };
 }
 
 export async function warmHomeCritical(): Promise<void> {
-  await Promise.allSettled([getStatus(), getUptime()]);
+  await Promise.allSettled([
+    fetchStatus(),
+    fetch(apiUrl('/players'), { headers: { Accept: 'application/json' }, cache: 'no-store' }),
+  ]);
 }
 
 export function prefetchApiInBackground(): void {
@@ -99,7 +83,6 @@ export function prefetchApiInBackground(): void {
   const prefetch = () => {
     void Promise.allSettled([
       getStatus(),
-      getUptime(),
       fetch(apiUrl('/players'), { headers: { Accept: 'application/json' } }).catch(() => null),
     ]);
   };

@@ -12,8 +12,15 @@ export function CountdownTimer({ targetDate, eventName, message }: CountdownTime
   const [timeLeft, setTimeLeft] = useState(() => calculateTimeLeft(targetDate));
 
   useEffect(() => {
+    if (calculateTimeLeft(targetDate).difference <= 0) return;
+
     const timer = setInterval(() => {
-      setTimeLeft(calculateTimeLeft(targetDate));
+      const next = calculateTimeLeft(targetDate);
+      setTimeLeft(next);
+
+      if (next.difference <= 0) {
+        clearInterval(timer);
+      }
     }, 1000);
 
     return () => clearInterval(timer);

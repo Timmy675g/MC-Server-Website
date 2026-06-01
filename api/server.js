@@ -1,7 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { io } from 'socket.io-client';
-import { status as statusJava, statusBedrock } from 'minecraft-server-util';
+import { queryFull, status as statusJava, statusBedrock } from 'minecraft-server-util';
 import mysql from 'mysql2/promise';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -76,6 +76,7 @@ const PORT = envNumber('PORT', 3001);
 const MC_SERVER_HOST = envString('MC_SERVER_HOST', 'play.survivalkendy.systems');
 const SERVER_IP = envString('SERVER_IP', '167.71.220.58');
 const MC_SERVER_PORT = envNumber('MC_SERVER_PORT', 25565);
+const MC_QUERY_PORT = envNumber('MC_QUERY_PORT', MC_SERVER_PORT);
 const BEDROCK_PORT = envNumber('BEDROCK_PORT', 19132);
 const UPTIME_KUMA_STATUS_PAGE_URL = envString('UPTIME_KUMA_STATUS_PAGE_URL', '');
 const UPTIME_KUMA_MONITOR_MINECRAFT = envString('UPTIME_KUMA_MONITOR_MINECRAFT', '');
@@ -507,22 +508,29 @@ function normalizeStatusFromMcstatus(data) {
   const online = Boolean(data?.online);
   const playersOnline = Number(data?.players?.online ?? 0);
   const playersMax = Number(data?.players?.max ?? 0);
+  const javaPing = Number.isFinite(Number(data?.debug?.ping))
+    ? Number(data.debug.ping)
+    : Number.isFinite(Number(data?.roundTripLatency))
+      ? Number(data.roundTripLatency)
+      : null;
+  const players = normalizePlayers(data, null);
 
   return {
     status: online ? 'online' : 'offline',
     playersOnline,
     playersMax,
     uptime: 0,
-    javaPing: null,
+    javaPing,
     bedrockPing: null,
     version: data?.version?.name || data?.version?.name_clean || undefined,
     software: data?.software || undefined,
+    players,
     java: {
       online,
       port: MC_SERVER_PORT,
       playersOnline,
       playersMax,
-      ping: null,
+      ping: javaPing,
     },
     bedrock: {
       online: false,
@@ -539,34 +547,88 @@ async function fetchMcstatusStatus() {
   return fetchJson(url, STATUS_PROBE_TIMEOUT_MS);
 }
 
-function normalizePlayers(javaData) {
-  const list = Array.isArray(javaData?.players?.sample) ? javaData.players.sample : [];
-  return list.map((item) => ({
-    username: String(item?.name || 'Unknown'),
-    uuid: String(item?.id || ''),
-  }));
+function normalizePlayerName(value) {
+  const name = String(value || '').trim();
+  return name && name !== 'Unknown' ? name : '';
 }
 
-function normalizeStatusFromSettled(javaData, bedrockData, bedrockPingMs) {
+function normalizePlayers(javaData, queryData) {
+  const byName = new Map();
+  const addPlayer = (username, uuid = '') => {
+    const name = normalizePlayerName(username);
+    if (!name) return;
+
+    const key = name.toLowerCase();
+    const previous = byName.get(key);
+    byName.set(key, {
+      username: name,
+      uuid: String(uuid || previous?.uuid || '').trim(),
+    });
+  };
+
+  const sample = Array.isArray(javaData?.players?.sample)
+    ? javaData.players.sample
+    : Array.isArray(javaData?.players?.list)
+      ? javaData.players.list
+      : [];
+
+  sample.forEach((item) => {
+    if (typeof item === 'string') {
+      addPlayer(item);
+      return;
+    }
+
+    addPlayer(item?.name || item?.username, item?.id || item?.uuid);
+  });
+
+  const queryList = Array.isArray(queryData?.players?.list) ? queryData.players.list : [];
+  queryList.forEach((name) => addPlayer(name));
+
+  return Array.from(byName.values());
+}
+
+function uniqueProbeHosts() {
+  return Array.from(new Set([MC_SERVER_HOST, SERVER_IP].map((host) => String(host || '').trim()).filter(Boolean)));
+}
+
+async function firstSuccessfulProbe(probeFactory) {
+  const probes = uniqueProbeHosts().map((host) => probeFactory(host));
+  if (probes.length === 0) throw new Error('No Minecraft probe host configured');
+
+  try {
+    return await Promise.any(probes);
+  } catch (error) {
+    const firstError = Array.isArray(error?.errors) ? error.errors[0] : error;
+    throw firstError || new Error('All Minecraft probe hosts failed');
+  }
+}
+
+function normalizeStatusFromSettled(javaData, bedrockData, bedrockPingMs, queryData) {
   const javaOnline = Boolean(javaData);
   const bedrockOnline = Boolean(bedrockData);
   const online = javaOnline || bedrockOnline;
+  const playersOnline = Number(javaData?.players?.online ?? queryData?.players?.online ?? bedrockData?.players?.online ?? 0);
+  const playersMax = Number(javaData?.players?.max ?? queryData?.players?.max ?? bedrockData?.players?.max ?? 0);
+  const javaPing = Number.isFinite(Number(javaData?.roundTripLatency)) ? Number(javaData.roundTripLatency) : null;
+  const players = normalizePlayers(javaData, queryData);
 
   return {
     status: online ? 'online' : 'offline',
-    playersOnline: Number(javaData?.players?.online ?? bedrockData?.players?.online ?? 0),
-    playersMax: Number(javaData?.players?.max ?? bedrockData?.players?.max ?? 0),
+    playersOnline,
+    playersMax,
     uptime: 0,
-    javaPing: Number.isFinite(Number(javaData?.roundTripLatency)) ? Number(javaData.roundTripLatency) : null,
+    javaPing,
     bedrockPing: Number.isFinite(Number(bedrockPingMs)) ? Number(bedrockPingMs) : null,
     version: javaData?.version?.name || bedrockData?.version?.name || undefined,
-    software: javaData?.motd?.clean || bedrockData?.motd?.clean || undefined,
+    software: queryData?.software || javaData?.motd?.clean || bedrockData?.motd?.clean || undefined,
+    players,
+    playerSampleAvailable: players.length > 0,
     java: {
       online: javaOnline,
       port: MC_SERVER_PORT,
       playersOnline: Number(javaData?.players?.online ?? 0),
       playersMax: Number(javaData?.players?.max ?? 0),
-      ping: Number.isFinite(Number(javaData?.roundTripLatency)) ? Number(javaData.roundTripLatency) : null,
+      ping: javaPing,
     },
     bedrock: {
       online: bedrockOnline,
@@ -574,6 +636,13 @@ function normalizeStatusFromSettled(javaData, bedrockData, bedrockPingMs) {
       playersOnline: Number(bedrockData?.players?.online ?? 0),
       playersMax: Number(bedrockData?.players?.max ?? 0),
       ping: Number.isFinite(Number(bedrockPingMs)) ? Number(bedrockPingMs) : null,
+    },
+    query: {
+      online: Boolean(queryData),
+      port: MC_QUERY_PORT,
+      playersOnline: Number(queryData?.players?.online ?? 0),
+      playersMax: Number(queryData?.players?.max ?? 0),
+      playerNames: Array.isArray(queryData?.players?.list) ? queryData.players.list.length : 0,
     },
   };
 }
@@ -609,12 +678,22 @@ function buildOfflineStatus(errorMessage) {
 }
 
 function probeJavaStatus() {
-  return statusJava(MC_SERVER_HOST, MC_SERVER_PORT, { timeout: STATUS_PROBE_TIMEOUT_MS, enableSRV: true });
+  return firstSuccessfulProbe((host) =>
+    statusJava(host, MC_SERVER_PORT, { timeout: STATUS_PROBE_TIMEOUT_MS, enableSRV: true }),
+  );
+}
+
+function probeQueryStatus() {
+  return firstSuccessfulProbe((host) =>
+    queryFull(host, MC_QUERY_PORT, { timeout: STATUS_PROBE_TIMEOUT_MS, enableSRV: true }),
+  );
 }
 
 async function probeBedrockStatus() {
   const startedAt = Date.now();
-  const response = await statusBedrock(MC_SERVER_HOST, BEDROCK_PORT, { timeout: STATUS_PROBE_TIMEOUT_MS, enableSRV: true });
+  const response = await firstSuccessfulProbe((host) =>
+    statusBedrock(host, BEDROCK_PORT, { timeout: STATUS_PROBE_TIMEOUT_MS, enableSRV: true }),
+  );
   return {
     data: response,
     ping: Date.now() - startedAt,
@@ -713,14 +792,50 @@ function summarizeUptime(timeline) {
 async function getLiveStatus() {
   if (cachedStatus && nowMs() - cachedStatusAt < STATUS_CACHE_TTL_MS) return cachedStatus;
 
+  const [javaResult, bedrockResult, queryResult] = await Promise.allSettled([
+    probeJavaStatus(),
+    probeBedrockStatus(),
+    probeQueryStatus(),
+  ]);
+
+  const javaData = javaResult.status === 'fulfilled' ? javaResult.value : null;
+  const bedrockProbe = bedrockResult.status === 'fulfilled' ? bedrockResult.value : null;
+  const queryData = queryResult.status === 'fulfilled' ? queryResult.value : null;
+
+  if (javaData || bedrockProbe || queryData) {
+    const normalized = normalizeStatusFromSettled(
+      javaData,
+      bedrockProbe?.data || null,
+      bedrockProbe?.ping ?? null,
+      queryData,
+    );
+
+    cachedStatus = {
+      ...normalized,
+      source: 'minecraft-server-util',
+      probeErrors: {
+        java: javaResult.status === 'rejected' ? String(javaResult.reason?.message || javaResult.reason) : null,
+        bedrock: bedrockResult.status === 'rejected' ? String(bedrockResult.reason?.message || bedrockResult.reason) : null,
+        query: queryResult.status === 'rejected' ? String(queryResult.reason?.message || queryResult.reason) : null,
+      },
+    };
+    cachedStatusAt = nowMs();
+
+    return cachedStatus;
+  }
+
   try {
     const mcstatusData = await fetchMcstatusStatus();
     const normalized = normalizeStatusFromMcstatus(mcstatusData);
 
     cachedStatus = {
       ...normalized,
-      players: [],
       source: 'mcstatus.io',
+      probeErrors: {
+        java: javaResult.status === 'rejected' ? String(javaResult.reason?.message || javaResult.reason) : null,
+        bedrock: bedrockResult.status === 'rejected' ? String(bedrockResult.reason?.message || bedrockResult.reason) : null,
+        query: queryResult.status === 'rejected' ? String(queryResult.reason?.message || queryResult.reason) : null,
+      },
     };
     cachedStatusAt = nowMs();
 
