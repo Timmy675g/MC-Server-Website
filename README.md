@@ -52,24 +52,16 @@ export default defineConfig([
   - Lint and production build checks
   - Required GitHub Secrets validation (legacy env + app env)
 
-  Required GitHub Secrets:
-  - `BEDROCK_PORT`
-  - `MC_SERVER_HOSTS`
-  - `MC_SERVER_PORT`
-  - `RCON_PORT`
-  - `UPTIME_KUMA_MONITOR_MINECRAFT`
-  - `UPTIME_KUMA_MONITOR_VM`
-  - `UPTIME_KUMA_STATUS_PAGE_URL`
-
   Optional GitHub Secrets:
   - `VITE_FORMSUBMIT_EMAIL`
   - `VITE_FORMSUBMIT_ENDPOINT`
-  - `VITE_API_BASE`
 
   ## GitHub Pages Deployment
 
   If hosting from GitHub Pages, do not serve repository root source files directly.
   This project is Vite-based and must be built first so `dist/` is deployed.
+  The public website is now frontend-only/static archive mode; it does not need
+  the old Node/API backend to build or render.
 
   Workflow: `.github/workflows/deploy-pages.yml`
 

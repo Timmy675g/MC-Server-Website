@@ -16,7 +16,7 @@ const statusItems = [
   { to: '/stats', label: 'Stats' },
 ];
 
-const mobileCollapsedItems = [...infoItems, { to: '/login', label: 'Login' }, ...statusItems];
+const mobileCollapsedItems = [...infoItems, ...statusItems];
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
@@ -96,7 +96,10 @@ export function Navbar() {
   const playerCountText = liveStatus
     ? `${liveStatus.playersOnline} / ${liveStatus.playersMax}`
     : '-- / --';
-  const navLiveLabel = isStatusLoading && !liveStatus
+  const isArchiveMode = liveStatus?.source === 'Archive Mode';
+  const navLiveLabel = isArchiveMode
+    ? 'Archived'
+    : isStatusLoading && !liveStatus
     ? 'Loading'
     : isStatusStale || isStatusError
       ? 'Stale'
@@ -163,9 +166,6 @@ export function Navbar() {
                 {item.label}
               </NavLink>
             ))}
-            <NavLink to="/login" className={({ isActive }) => (isActive ? 'active' : '')}>
-              Login
-            </NavLink>
           </div>
         </div>
 

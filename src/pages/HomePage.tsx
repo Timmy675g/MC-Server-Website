@@ -290,6 +290,7 @@ export default function HomePage() {
   }, []);
 
   const cards = useMemo(() => {
+    const isArchiveMode = status?.source === 'Archive Mode';
     const liveStatus = statusLabel(status?.status ?? 'offline');
     const bestPing = [status?.javaPing, status?.bedrockPing]
       .filter((value): value is number => Number.isFinite(Number(value)))
@@ -303,9 +304,9 @@ export default function HomePage() {
     return [
       {
         label: 'Status',
-        value: isStatusLoading && !status ? 'Loading' : liveStatus,
+        value: isArchiveMode ? 'Archived' : isStatusLoading && !status ? 'Loading' : liveStatus,
         className: `${statusTone(status?.status ?? '')} ${isStatusStale ? 'is-stale-value' : ''}`.trim(),
-        tooltip: 'Live server status — Operational means the server is online and accepting connections.',
+        tooltip: isArchiveMode ? 'SurvivalKendy is preserved as a static archive.' : 'Live server status — Operational means the server is online and accepting connections.',
       },
       {
         label: 'Current Players',
@@ -320,7 +321,7 @@ export default function HomePage() {
         label: 'Latency',
         value: bestPing !== undefined ? `${Math.round(bestPing)} ms` : '--',
         className: '',
-        tooltip: 'Lowest available Java or Bedrock ping from the latest status poll.',
+        tooltip: isArchiveMode ? 'Live ping is unavailable because the backend is no longer running.' : 'Lowest available Java or Bedrock ping from the latest status poll.',
       },
       {
         label: 'TPS / MSPT',
@@ -343,7 +344,10 @@ export default function HomePage() {
     ];
   }, [isStatusLoading, isStatusStale, status]);
 
-  const statusDescription = isStatusLoading && !status
+  const isArchiveMode = status?.source === 'Archive Mode';
+  const statusDescription = isArchiveMode
+    ? 'The public site is running as a static archive. Live server probes are disabled.'
+    : isStatusLoading && !status
     ? 'Checking live server data...'
     : isStatusError
       ? 'Live checks are failing. Last known data remains visible.'
@@ -495,10 +499,10 @@ export default function HomePage() {
           <div className="home-command-copy">
             <p className="eyebrow">Server Command Center</p>
             <h2 className="home-typing-headline" data-typing-list="SurvivalKendy Minecraft Server|War or Peace Situations|Creativity, Strategy, Community.">{typingValue}</h2>
-            <p className="subtitle">Live connection details, server health, and the fastest path into SurvivalKendy.</p>
+            <p className="subtitle">{isArchiveMode ? 'Preserved connection details, project history, and SurvivalKendy community archive.' : 'Live connection details, server health, and the fastest path into SurvivalKendy.'}</p>
             <div className={`live-status-strip ${isStatusStale ? 'is-stale' : ''} ${isStatusError ? 'is-error' : ''}`} role="status" aria-live="polite">
               <span className="live-status-dot" aria-hidden="true" />
-              <strong>{isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : status?.status === 'offline' ? 'Offline' : 'Live'}</strong>
+              <strong>{isArchiveMode ? 'Archived' : isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : status?.status === 'offline' ? 'Offline' : 'Live'}</strong>
               <span>Last updated {lastUpdatedLabel}</span>
               {isStatusError ? <span>{lastError || 'Live data is temporarily unavailable.'}</span> : null}
             </div>
@@ -591,8 +595,8 @@ export default function HomePage() {
               {isStatusError ? <AlertTriangle size={18} /> : <Activity size={18} />}
             </div>
             <div>
-              <p className="status-action-label">Live Status</p>
-              <h3>{isStatusStale ? 'Last Known Data' : 'Server Health'}</h3>
+              <p className="status-action-label">{isArchiveMode ? 'Archive Status' : 'Live Status'}</p>
+              <h3>{isArchiveMode ? 'Static Archive' : isStatusStale ? 'Last Known Data' : 'Server Health'}</h3>
               <p className="meta">{statusDescription}</p>
             </div>
             <a className="link-arrow status-action-link" href={STATUS_PAGE_URL} target="_blank" rel="noreferrer">

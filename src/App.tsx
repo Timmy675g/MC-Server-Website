@@ -1,12 +1,10 @@
-import { lazy, Suspense, useEffect, useState, type ReactElement } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import { LoadingScreen } from './components/LoadingScreen';
 import { SiteLayout } from './layouts/SiteLayout';
-import { prefetchApiInBackground, warmHomeCritical } from './lib/api';
 import { assetUrl } from './lib/asset-url';
 import { NEWS_ITEMS } from './lib/content';
-import { isAdminAuthenticated } from './lib/auth';
 import HomePage from './pages/HomePage';
 
 const GuidePage = lazy(() => import('./pages/GuidePage'));
@@ -18,28 +16,11 @@ const FactionsPage = lazy(() => import('./pages/FactionsPage'));
 const RulesPage = lazy(() => import('./pages/RulesPage'));
 const AboutPage = lazy(() => import('./pages/AboutPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const AdminPage = lazy(() => import('./pages/AdminPage'));
 
 const MIN_BOOT_MS = 900;
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function withTimeout<T>(task: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const id = window.setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs);
-    task
-      .then((value) => {
-        window.clearTimeout(id);
-        resolve(value);
-      })
-      .catch((error) => {
-        window.clearTimeout(id);
-        reject(error);
-      });
-  });
 }
 
 function waitForNextPaint() {
@@ -212,10 +193,7 @@ function App() {
     const constrainedDevice = isMobileConstrainedDevice();
 
     const runBoot = async () => {
-      // Block initial boot on truly critical dependencies so we do not show a blank
-      // page after loader dismissal on slower networks.
       await Promise.allSettled([
-        withTimeout(warmHomeCritical(), constrainedDevice ? 12000 : 9000),
         delay(constrainedDevice ? 140 : MIN_BOOT_MS),
       ]);
 
@@ -229,10 +207,6 @@ function App() {
       setBooting(false);
 
       if (!constrainedDevice) {
-        scheduleIdleTask(() => {
-          prefetchApiInBackground();
-        }, 1000);
-
         scheduleIdleTask(() => {
           prefetchRoutes();
         }, 1800);
@@ -250,10 +224,6 @@ function App() {
     return <LoadingScreen />;
   }
 
-  const requireAdmin = (element: ReactElement) => (
-    isAdminAuthenticated() ? element : <Navigate to="/login" replace />
-  );
-
   return (
     <Suspense fallback={null}>
       <Routes>
@@ -270,8 +240,6 @@ function App() {
           <Route path="/rules" element={<RulesPage />} />
           <Route path="/about" element={<AboutPage />} />
           <Route path="/events" element={<EventsPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/admin" element={requireAdmin(<AdminPage />)} />
           <Route path="*" element={<HomePage />} />
         </Route>
       </Routes>

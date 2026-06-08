@@ -43,15 +43,16 @@ export default function StatsPage() {
     lastUpdatedLabel,
     lastError,
   } = usePollingStatus();
+  const isArchiveMode = status?.source === 'Archive Mode';
 
   useEffect(() => {
-    if (status && lastUpdatedAt) {
+    if (status && lastUpdatedAt && !isArchiveMode) {
       setHistory(pushHistory(status.playersOnline));
       return;
     }
 
     setHistory(loadHistory(14));
-  }, [lastUpdatedAt, status]);
+  }, [isArchiveMode, lastUpdatedAt, status]);
 
   const ranking = useMemo(() => {
     const selected = factionServerView === 'current' ? CURRENT_FACTION_ITEMS : PREVIOUS_FACTION_ITEMS;
@@ -67,10 +68,10 @@ export default function StatsPage() {
     <main className="container section stack reveal in-view">
       <Card className="card" style={{ gridColumn: '1 / -1' }}>
         <h1>Stats Dashboard</h1>
-        <p className="subtitle">Live player trend and faction power ranking.</p>
+        <p className="subtitle">{isArchiveMode ? 'Archived faction rankings and locally stored player samples.' : 'Live player trend and faction power ranking.'}</p>
         <div className={`live-status-strip ${isStatusStale ? 'is-stale' : ''} ${isStatusError ? 'is-error' : ''}`} role="status" aria-live="polite">
           <span className="live-status-dot" aria-hidden="true" />
-          <strong>{isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : 'Live'}</strong>
+          <strong>{isArchiveMode ? 'Archived' : isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : 'Live'}</strong>
           <span>Last updated {lastUpdatedLabel}</span>
           {isStatusError ? <span>{lastError || 'Unable to load stats data right now.'}</span> : null}
         </div>
@@ -80,7 +81,7 @@ export default function StatsPage() {
         <div className="stats-chart-head">
           <div>
             <h3>Player Count</h3>
-            <p className="meta">Recent samples stored locally in this browser.</p>
+            <p className="meta">{isArchiveMode ? 'Live backend is offline. Only local browser samples can appear here.' : 'Recent samples stored locally in this browser.'}</p>
           </div>
           <p className="stats-chart-current">
             <span>Now</span>

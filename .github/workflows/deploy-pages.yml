@@ -35,7 +35,6 @@ jobs:
 
       - name: Build
         env:
-          VITE_API_BASE: ${{ secrets.VITE_API_BASE }}
           VITE_FORMSUBMIT_EMAIL: ${{ secrets.VITE_FORMSUBMIT_EMAIL }}
           VITE_FORMSUBMIT_ENDPOINT: ${{ secrets.VITE_FORMSUBMIT_ENDPOINT }}
         run: npm run build

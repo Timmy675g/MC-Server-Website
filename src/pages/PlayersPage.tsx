@@ -80,11 +80,11 @@ export default function PlayersPage() {
         <p className="subtitle">
           {payload?.status === 'online'
             ? `Server online: ${payload?.playersOnline ?? 0} / ${payload?.playersMax ?? 0}`
-            : `Server offline. Last known: ${payload?.playersOnline ?? 0} / ${payload?.playersMax ?? 0}`}
+            : 'Server archived. Live player data is no longer available.'}
         </p>
         <div className={`live-status-strip ${isStatusStale ? 'is-stale' : ''} ${isStatusError ? 'is-error' : ''}`} role="status" aria-live="polite">
           <span className="live-status-dot" aria-hidden="true" />
-          <strong>{isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : 'Live'}</strong>
+          <strong>{payload?.source === 'Archive Mode' ? 'Archived' : isStatusLoading && !status ? 'Loading' : isStatusStale ? 'Stale' : 'Live'}</strong>
           <span>Last updated {lastUpdatedLabel}</span>
           {isStatusError ? <span>{lastError || 'Unable to fetch players right now.'}</span> : null}
         </div>
@@ -94,9 +94,11 @@ export default function PlayersPage() {
       {players.length === 0 ? (
         <MotionReveal>
           <article className={`card players-empty polished-empty-state ${isStatusError ? 'is-error-card' : ''}`.trim()}>
-            <strong>{isStatusLoading && !status ? 'Loading player names' : 'No player names available'}</strong>
+            <strong>{payload?.source === 'Archive Mode' ? 'Player list archived' : isStatusLoading && !status ? 'Loading player names' : 'No player names available'}</strong>
             <p className="meta">
-              {isStatusLoading && !status
+              {payload?.source === 'Archive Mode'
+                ? 'The live backend is no longer running, so player names are not fetched on the static site.'
+                : isStatusLoading && !status
                 ? 'Waiting for the live Minecraft status sample.'
                 : isStatusError
                   ? lastError || 'Unable to refresh player data right now.'
