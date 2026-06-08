@@ -108,7 +108,7 @@ export default function HomePage() {
     [],
   );
   const [typingIndex, setTypingIndex] = useState(0);
-  const [typingValue, setTypingValue] = useState('');
+  const [typingValue, setTypingValue] = useState(() => typingWords[0] ?? '');
   const [railIndex, setRailIndex] = useState(0);
   const [railResetToken, setRailResetToken] = useState(0);
   const [isRailPaused, setIsRailPaused] = useState(false);
@@ -133,21 +133,14 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (liteMode) {
-      // In lite mode, just show the first phrase statically.
-      setTypingValue(typingWords[typingIndex] ?? '');
-      return;
-    }
+    if (liteMode) return;
 
     const text = typingWords[typingIndex] ?? '';
     let frame = 0;
     let deleting = false;
     let cancelled = false;
     let timerId: number | null = null;
-
-    // Reset visible value when this cycle begins so we never
-    // briefly render the previous word's leftover characters.
-    setTypingValue('');
+    let resetTimerId: number | null = null;
 
     const schedule = (delay: number) => {
       if (cancelled) return;
@@ -182,11 +175,20 @@ export default function HomePage() {
       }
     };
 
-    // Initial delay before the first character appears.
-    schedule(220);
+    resetTimerId = window.setTimeout(() => {
+      if (cancelled) return;
+      // Reset visible value when this cycle begins so we never
+      // briefly render the previous word's leftover characters.
+      setTypingValue('');
+      schedule(220);
+    }, 0);
 
     return () => {
       cancelled = true;
+      if (resetTimerId !== null) {
+        window.clearTimeout(resetTimerId);
+        resetTimerId = null;
+      }
       if (timerId !== null) {
         window.clearTimeout(timerId);
         timerId = null;
@@ -414,6 +416,7 @@ export default function HomePage() {
     () => [...PREVIOUS_FACTION_ITEMS].sort((a, b) => b.power - a.power).slice(0, 3),
     [],
   );
+  const displayedTypingValue = liteMode ? typingWords[typingIndex] ?? '' : typingValue;
   const copyServerIp = async () => {
     try {
       await navigator.clipboard.writeText(SERVER_IP);
@@ -498,7 +501,7 @@ export default function HomePage() {
         <div className="hero-grid home-command-grid">
           <div className="home-command-copy">
             <p className="eyebrow">Server Command Center</p>
-            <h2 className="home-typing-headline" data-typing-list="SurvivalKendy Minecraft Server|War or Peace Situations|Creativity, Strategy, Community.">{typingValue}</h2>
+            <h2 className="home-typing-headline" data-typing-list="SurvivalKendy Minecraft Server|War or Peace Situations|Creativity, Strategy, Community.">{displayedTypingValue}</h2>
             <p className="subtitle">{isArchiveMode ? 'Preserved connection details, project history, and SurvivalKendy community archive.' : 'Live connection details, server health, and the fastest path into SurvivalKendy.'}</p>
             <div className={`live-status-strip ${isStatusStale ? 'is-stale' : ''} ${isStatusError ? 'is-error' : ''}`} role="status" aria-live="polite">
               <span className="live-status-dot" aria-hidden="true" />

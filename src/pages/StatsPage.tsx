@@ -32,7 +32,7 @@ function pushHistory(value: number): PlayerPoint[] {
 }
 
 export default function StatsPage() {
-  const [history, setHistory] = useState<PlayerPoint[]>([]);
+  const [history, setHistory] = useState<PlayerPoint[]>(() => loadHistory(14));
   const [factionServerView, setFactionServerView] = useState<'current' | 'previous'>('current');
   const {
     status,
@@ -46,12 +46,16 @@ export default function StatsPage() {
   const isArchiveMode = status?.source === 'Archive Mode';
 
   useEffect(() => {
-    if (status && lastUpdatedAt && !isArchiveMode) {
-      setHistory(pushHistory(status.playersOnline));
-      return;
-    }
+    const id = window.setTimeout(() => {
+      if (status && lastUpdatedAt && !isArchiveMode) {
+        setHistory(pushHistory(status.playersOnline));
+        return;
+      }
 
-    setHistory(loadHistory(14));
+      setHistory(loadHistory(14));
+    }, 0);
+
+    return () => window.clearTimeout(id);
   }, [isArchiveMode, lastUpdatedAt, status]);
 
   const ranking = useMemo(() => {

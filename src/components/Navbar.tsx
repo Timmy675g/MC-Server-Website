@@ -43,17 +43,13 @@ export function Navbar() {
     return () => document.body.classList.remove('nav-open-mobile');
   }, [open]);
 
-  // Auto-close the mobile menu and any open dropdowns on navigation.
-  // Without this, body.nav-open-mobile (which sets overflow:hidden +
-  // touch-action:none) can persist after route change, making the new
-  // page un-scrollable / un-swipeable.
-  useEffect(() => {
+  const closeNavigationSurfaces = () => {
     setOpen(false);
     setOpenDropdown(null);
     setStatsOpen(false);
     setHoverLockCount(0);
     document.body.classList.remove('nav-open-mobile');
-  }, [location.pathname]);
+  };
 
   // Final safety net: ensure the scroll-lock class is never left behind
   // if the Navbar somehow unmounts while open.
@@ -144,7 +140,7 @@ export function Navbar() {
       </div>
 
       <div id="nav-links" className={`nav-links ${open ? 'open' : ''}`}>
-        <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')}>Home</NavLink>
+        <NavLink to="/" onClick={closeNavigationSurfaces} className={({ isActive }) => (isActive ? 'active' : '')}>Home</NavLink>
 
         <div
           className={`nav-dropdown ${openDropdown === 'info' ? 'open' : ''}`}
@@ -162,7 +158,7 @@ export function Navbar() {
           </button>
           <div className="nav-dropdown-menu">
             {infoItems.map((item) => (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
+              <NavLink key={item.to} to={item.to} onClick={closeNavigationSurfaces} className={({ isActive }) => (isActive ? 'active' : '')}>
                 {item.label}
               </NavLink>
             ))}
@@ -185,7 +181,7 @@ export function Navbar() {
           </button>
           <div className="nav-dropdown-menu">
             {statusItems.map((item) => (
-              <NavLink key={item.to} to={item.to} className={({ isActive }) => (isActive ? 'active' : '')}>
+              <NavLink key={item.to} to={item.to} onClick={closeNavigationSurfaces} className={({ isActive }) => (isActive ? 'active' : '')}>
                 {item.label}
               </NavLink>
             ))}
@@ -193,13 +189,13 @@ export function Navbar() {
         </div>
 
         {mobileCollapsedItems.map((item) => (
-          <NavLink key={`mobile-${item.to}`} to={item.to} className={({ isActive }) => (isActive ? 'active nav-collapse-target' : 'nav-collapse-target')}>
+          <NavLink key={`mobile-${item.to}`} to={item.to} onClick={closeNavigationSurfaces} className={({ isActive }) => (isActive ? 'active nav-collapse-target' : 'nav-collapse-target')}>
             {item.label}
           </NavLink>
         ))}
 
-        <NavLink to="/news" className={({ isActive }) => (isActive ? 'active' : '')}>News</NavLink>
-        <NavLink to="/join" className={({ isActive }) => (isActive ? 'active' : '')}>Join</NavLink>
+        <NavLink to="/news" onClick={closeNavigationSurfaces} className={({ isActive }) => (isActive ? 'active' : '')}>News</NavLink>
+        <NavLink to="/join" onClick={closeNavigationSurfaces} className={({ isActive }) => (isActive ? 'active' : '')}>Join</NavLink>
       </div>
 
       <div className={`nav-stats ${statsOpen && !statsBlocked ? 'open' : ''} ${statsBlocked ? 'is-disabled' : ''}`}>

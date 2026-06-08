@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { usePollingStatus } from '../hooks/usePollingStatus';
 import { MotionReveal } from '../components/MotionReveal';
 
@@ -50,7 +50,6 @@ function avatarChain(player: Player): string[] {
 }
 
 export default function PlayersPage() {
-  const [servers, setServers] = useState<Player[]>([]);
   const {
     status,
     isLoading: isStatusLoading,
@@ -60,11 +59,7 @@ export default function PlayersPage() {
     lastError,
   } = usePollingStatus();
 
-  useEffect(() => {
-    setServers(Array.isArray(status?.players) ? status.players : []);
-  }, [status?.players]);
-
-  const players = servers;
+  const players = Array.isArray(status?.players) ? status.players : [];
   const payload: PlayersResponse = {
     status: status?.status,
     source: status?.source,

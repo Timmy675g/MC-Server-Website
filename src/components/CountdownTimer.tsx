@@ -8,6 +8,27 @@ interface CountdownTimerProps {
   message?: string;
 }
 
+function calculateTimeLeft(target: string) {
+  const difference = +new Date(target) - +new Date();
+  let timeLeft = {
+    days: 0,
+    hours: 0,
+    minutes: 0,
+    seconds: 0
+  };
+
+  if (difference > 0) {
+    timeLeft = {
+      days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+      hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+      minutes: Math.floor((difference / 1000 / 60) % 60),
+      seconds: Math.floor((difference / 1000) % 60)
+    };
+  }
+
+  return { difference, timeLeft };
+}
+
 export function CountdownTimer({ targetDate, eventName, message }: CountdownTimerProps) {
   const [timeLeft, setTimeLeft] = useState(() => calculateTimeLeft(targetDate));
 
@@ -25,27 +46,6 @@ export function CountdownTimer({ targetDate, eventName, message }: CountdownTime
 
     return () => clearInterval(timer);
   }, [targetDate]);
-
-  function calculateTimeLeft(target: string) {
-    const difference = +new Date(target) - +new Date();
-    let timeLeft = {
-      days: 0,
-      hours: 0,
-      minutes: 0,
-      seconds: 0
-    };
-
-    if (difference > 0) {
-      timeLeft = {
-        days: Math.floor(difference / (1000 * 60 * 60 * 24)),
-        hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
-        minutes: Math.floor((difference / 1000 / 60) % 60),
-        seconds: Math.floor((difference / 1000) % 60)
-      };
-    }
-
-    return { difference, timeLeft };
-  }
 
   const { difference, timeLeft: { days, hours, minutes, seconds } } = timeLeft;
 
